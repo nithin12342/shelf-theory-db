@@ -1,0 +1,19 @@
+# Environment & Credentials
+.env
+.env.local
+*.token
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Rust build artifacts
+target/
+**/target/
+Cargo.lock
+
+# IDE / System
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
