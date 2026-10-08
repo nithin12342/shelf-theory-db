@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/sheaf-core", "crates/sheaf-storage", "crates/sheaf-kernel", "crates/sheaf-engine"]
+resolver = "2"
