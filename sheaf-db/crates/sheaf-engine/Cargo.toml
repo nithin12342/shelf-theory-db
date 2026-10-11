@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 sheaf-core = { path = "../sheaf-core" }
 sheaf-storage = { path = "../sheaf-storage" }
+sheaf-kernel = { path = "../sheaf-kernel" }

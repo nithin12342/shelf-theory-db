@@ -8,6 +8,7 @@ in `.git/config` permanently. Supports loading credentials from a local
 """
 
 import argparse
+import datetime
 import os
 import re
 import subprocess
@@ -75,6 +76,20 @@ def sanitize_repo_url(url: str) -> str:
     return url
 
 
+# Push window policy: remotes are written only outside Mon-Fri 09:00-18:00
+# local time. Weekday uses datetime.weekday() (Mon=0 .. Sun=6); the end hour
+# is exclusive, so 18:00 onward is allowed.
+BUSINESS_DAYS = {0, 1, 2, 3, 4}
+BUSINESS_START_HOUR = 9
+BUSINESS_END_HOUR = 18
+
+
+def is_business_hours(now=None) -> bool:
+    """True when pushes are blocked: Mon-Fri 09:00 (incl) to 18:00 (excl)."""
+    now = now or datetime.datetime.now()
+    return now.weekday() in BUSINESS_DAYS and BUSINESS_START_HOUR <= now.hour < BUSINESS_END_HOUR
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Push local repository to personal GitHub using a Personal Access Token."
@@ -100,6 +115,11 @@ def main():
         "--force",
         action="store_true",
         help="Force push (--force-with-lease)",
+    )
+    parser.add_argument(
+        "--allow-business-hours",
+        action="store_true",
+        help="Override the Mon-Fri 09:00-18:00 push block (use deliberately)",
     )
     parser.add_argument(
         "--dir",
@@ -177,6 +197,19 @@ def main():
     print(f"[*] Target repository: https://github.com/{owner}/{repo_name}")
     print(f"[*] Target branch:     {target_branch}")
     print(f"[*] Remote name:       {args.remote}")
+
+    # 2b. Push window gate: refuse before touching any remote state.
+    now = datetime.datetime.now()
+    if is_business_hours(now) and not args.allow_business_hours:
+        print(
+            f"[!] Push blocked: business hours are Mon-Fri "
+            f"{BUSINESS_START_HOUR:02d}:00-{BUSINESS_END_HOUR:02d}:00 local time "
+            f"(now: {now.strftime('%A %H:%M')}).\n"
+            f"    Nothing was pushed and no remote was modified.\n"
+            f"    Re-run off-hours, or pass --allow-business-hours to override deliberately.",
+            file=sys.stderr,
+        )
+        sys.exit(3)
 
     # 3. Setup / update remote without persisting credentials permanently
     remotes_res = run_cmd(["git", "remote"], cwd=repo_dir, capture=True)
