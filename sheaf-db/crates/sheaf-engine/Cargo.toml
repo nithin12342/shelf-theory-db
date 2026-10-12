@@ -7,3 +7,4 @@ edition = "2021"
 sheaf-core = { path = "../sheaf-core" }
 sheaf-storage = { path = "../sheaf-storage" }
 sheaf-kernel = { path = "../sheaf-kernel" }
+sheaf-query = { path = "../sheaf-query" }
