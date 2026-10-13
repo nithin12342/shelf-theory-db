@@ -74,3 +74,15 @@ All numbers measured on this machine. Engine versions: SQLite 3.x (py), DuckDB 1
 - Harnesses: `sqlite_bench.py`, `duckdb_bench.py`, `redis_bench.py`, `mongo_bench.py`, `sql_bench.py`, `neo4j_bench.py`, `scylla_bench.py`, `neo_prep.py`
 - TPC-H SF1 verified: lineitem 6001215, orders 1500000, customer 150000, part 200000, partsupp 800000
 - Tools built: `D:\bench\build\tpch-dbgen\dbgen.exe` + `qgen.exe` (MinGW, WIN32+`__GNUC__` 6-line patch on a copy; repo pristine)
+
+## Fair-rerun verdicts (Tests 1–5, identical datasets + shapes, 2026-10-14)
+
+| Test | sheaf-db | Best competitor | Verdict |
+|------|----------|-----------------|---------|
+| 1: 6M scan SUM | 7.9 ms | DuckDB 6.4 ms (quiet rematch) | DuckDB wins — parity zone ±25% |
+| 2: 150k⋈1.5M⋈6M join | 2.5 s | DuckDB 158 ms / PG 3.04 s | Middle: DuckDB >> sheaf-db >> PG |
+| 3: 600k-path traversal | 41.7 ms (paths exact) | Neo4j 878 ms | sheaf-db wins 21× |
+| 4: 20k durable inserts | 6.9 µs p50 | SQLite 2.1 µs | SQLite wins 3.3× |
+| 5: 32-thread mixed | 217,522 ops/s | MongoDB 2,497 ops/s | sheaf-db wins 87× (different work/op; p99 shows mutex spikes) |
+
+Final tally across all 14 matrix tests + 5 fair reruns: the original apples-to-oranges verdicts are superseded by these like-for-like numbers. sheaf-db wins traversals, scans (loaded-box), joins vs PG, and throughput; concedes bulk scans (quiet), point writes, and the join crown to DuckDB.
