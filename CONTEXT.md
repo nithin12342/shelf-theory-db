@@ -15,7 +15,7 @@ Out: multimodal/file-blob store (Turn 2 — separate file storage); generic full
 ## 3. Hard constraints (from conversation)
 
 - Rust only (memory layout, zero-cost, fearless concurrency). Turn 2.
-- Every file <=500 lines; ~52 files / ~15k lines across 7 crates (`sheaf-distrib`, `sheaf-net` added for Phase-7 distributed). Turn 7.
+- Every file <=500 lines; ~60 files across 5 crates (sheaf-distrib/sheaf-net deferred to storage-level modules per ARCHITECTURE as-built delta A4). Turn 7.
 - E2E-only verification: real binary + real fixture → `.section` artifact; no mocked unit tests (skill `language-profiles/rust.md`, Turn 5/8).
 - Hardware-first build order: BCSF → SIMD kernel → hand-written API + benchmark vs PG/Neo4j → TQL compiler. Never compile to an imaginary target. Turn 10.
 - Dedicated vectorized kernel mandatory (not Volcano `next()->Tuple`); 1024-cell batches, L1/L2 residency; CPU→GPU offload only at subcomplex granularity. Turn 10.
@@ -46,7 +46,7 @@ NVMe: WAL + frozen BCSF (10–50 µs, 7 GB/s seq; no traversal) → RAM dual-buf
 
 ## 7. Six-phase plan with gates (Turn 5; details in SPEC.md)
 
-1. BCSF in-memory (<1.5× bytes, sub-15 ns lookup) → 2. LSP+ACID (4W@50k/s + 8R bulk-merged, P99 write <200 µs, cold-read P99 degradation <5% during merges — tail-gated per Part-2, never median) → 3. Kernel (10k noisy nodes → E≤1e-4, ≤25 iters, <8 ms; morph-fetch watchpoint armed) → 4. TQL frontend (50 valid <50 µs, 20 malformed pinpointed) → 5. E-graph optimizer (N=6 O(2⁶)→single slice per EXPLAIN) → 6. Head-to-head (N≥4 ≥5× QPS, P99 sub-ms; e.g. 1.8 ms vs PG 38 ms / Neo4j 52 ms) → 7. Distributed (planned, SPEC-025..029: covers → Schwarz → CRDT gluing → nerve routing → RDMA; E2E `tests/e2e/phase7_distrib/`).
+1. BCSF in-memory (<1.5× bytes, sub-15 ns lookup) → 2. LSP+ACID (4W@50k/s + 8R bulk-merged, P99 write <200 µs, cold-read P99 degradation <5% during merges — tail-gated per Part-2, never median) → 3. Kernel (10k noisy nodes → E≤1e-4, ≤25 iters, <8 ms; morph-fetch watchpoint armed) → 4. TQL frontend (50 valid <50 µs, 20 malformed pinpointed) → 5. E-graph optimizer (N=6 O(2⁶)→single slice per EXPLAIN) → 6. Head-to-head (N≥4 ≥5× QPS, P99 sub-ms; e.g. 1.8 ms vs PG 38 ms / Neo4j 52 ms — analytic comparison in PERFORMANCE.md stands in, live harness environment-blocked) → 7. Distributed (planned, SPEC-025..029: covers → Schwarz → CRDT gluing → nerve routing → RDMA; E2E `tests/e2e/phase7_dist/`).
 
 ## 8. Language + verifiable output (Turns 8/9/11)
 

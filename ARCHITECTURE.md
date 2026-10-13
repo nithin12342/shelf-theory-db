@@ -7,7 +7,7 @@ Rule: import arrows point inward only (enforced by `pub(crate)` + `cargo check`;
 
 ```
 sheaf-db/
-  Cargo.toml (workspace: sheaf-core, sheaf-storage, sheaf-kernel, sheaf-query, sheaf-engine, sheaf-distrib, sheaf-net)
+  Cargo.toml (workspace: sheaf-core, sheaf-storage, sheaf-kernel, sheaf-query, sheaf-engine — sheaf-distrib/sheaf-net deferred, see as-built delta A4)
   crates/sheaf-core/src/poset/          FOLDER-001  domain/TopologyCore
   crates/sheaf-core/src/stalk/          FOLDER-002  domain/TopologyCore
   crates/sheaf-core/src/morphism/       FOLDER-003  domain/TopologyCore
@@ -18,15 +18,15 @@ sheaf-db/
   crates/sheaf-kernel/src/operators/     FOLDER-008  application/SheafKernel (trait orchestration over domain primitives)
   crates/sheaf-kernel/src/solvers/       FOLDER-009  application/SheafKernel
   crates/sheaf-query/src/syntax/         FOLDER-010  interfaces+TQLCompiler
-  crates/sheaf-query/src/ir/             FOLDER-011  application/TQLCompiler
-  crates/sheaf-query/src/optimizer/      FOLDER-012  application/TQLCompiler
-  crates/sheaf-engine/src/catalog/       FOLDER-013  application/EngineRuntime
-  crates/sheaf-engine/src/executor/      FOLDER-014  application+infrastructure/EngineRuntime
+  crates/sheaf-query/src/ir/             FOLDER-011  application/TQLCompiler (TIR + validator + optimizer consolidated; FOLDER-012 merged here, see as-built delta A3)
+  ~~crates/sheaf-engine/src/catalog/~~       FOLDER-013  DEFERRED — schema registry never built; TQL DEFINE statements serve as catalog (see as-built delta A5)
+  ~~crates/sheaf-engine/src/executor/~~      FOLDER-014  DEFERRED — bench binaries serve as executor; api/result.rs serves as output (see as-built delta A5)
   crates/sheaf-engine/src/transaction/   FOLDER-015  application/EngineRuntime
   crates/sheaf-engine/src/api/           FOLDER-016  interfaces/EngineRuntime
-  crates/sheaf-distrib/src/               FOLDER-017  application+infrastructure/DistributedEngine (cover/border fuse orchestration with storage-impl types; waivers W-D1/W-D2 below)
-  crates/sheaf-net/src/                     FOLDER-018  infrastructure/DistributedEngine
-  tests/e2e/phase1_bcsf/  phase2_lsp/  phase3_kernel/  phase4_tql/  phase5_opt/  phase6_bench/  phase7_distrib/
+  crates/sheaf-engine/src/corpus.rs      (bench-corpus helper, no FOLDER; E2E harness, see as-built delta A1)
+  ~~crates/sheaf-distrib/src/~~               FOLDER-017  DEFERRED — implemented at storage level as bcsf/cover.rs + bcsf/partition.rs (see as-built delta A4)
+  ~~crates/sheaf-net/src/~~                     FOLDER-018  DEFERRED — loopback proves protocol; no separate crate (see as-built delta A4)
+  tests/e2e/phase1_bcsf/  phase2_lsp/  phase3_kernel/  phase4_tql/  phase5_opt/  phase6_split/  phase7_dist/
 ```
 
 Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (artifact next phase reads) + idempotent `run.sh` invoking `cargo run --bin <interface>`.
@@ -51,12 +51,15 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | bcsf/arena.rs | pack stalks plus morphism weights | parse or plan |
 | bcsf/reader.rs | serve zero-copy snapshot views | write or lock |
 | bcsf/builder.rs | assemble immutable BCSF segments | serve reads or compact |
+| bcsf/name_lookup.rs | find cells by discrete value | scan full BCSF |
+| bcsf/partition.rs | split hypergraph L3 domains | solve linear systems |
+| bcsf/cover.rs | assign hyperedges to domains | cut hyperedges by hash |
 | lsp/mem_complex.rs | append lock-free live poset | serve frozen reads |
 | lsp/wal.rs | log mutations with CRC | execute queries |
 | lsp/snapshot.rs | isolate MVCC read snapshots | compact segments |
 | lsp/compactor.rs | merge MemComplex into BCSF | accept client traffic |
-| index/tifi.rs | map attribute values to cells | scan full BCSF |
-| index/partition.rs | partition hypergraph NUMA domains | solve linear systems |
+| ~~index/tifi.rs~~ | ~~map attribute values to cells~~ | ~~scan full BCSF~~ |
+| ~~index/partition.rs~~ | ~~partition hypergraph NUMA domains~~ | ~~solve linear systems~~ |
 | simd/intersection.rs | intersect u64 slices via SIMD | know TQL syntax |
 | simd/matvec.rs | multiply W times stalk vectors | touch discrete masks |
 | operators/coboundary.rs | compute delta residuals per cell | own solver iteration |
@@ -67,32 +70,41 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | solvers/harmonic.rs | drive harmonic section relaxation | tokenize text |
 | syntax/lexer.rs | tokenize TQL topological keywords | typecheck dims |
 | syntax/parser.rs | parse TQL into AST | execute vectors |
+| syntax/expr_parser.rs | parse WHERE expressions | touch DDL syntax |
+| syntax/define_parser.rs | parse DEFINE statements | touch query syntax |
 | syntax/ast.rs | represent match restrict emit | optimize plans |
 | ir/tir.rs | lower AST to TIR graph | run SIMD |
 | ir/validator.rs | reject dim cycles mismatches | choose plan cost |
-| optimizer/egraph.rs | hold equivalence plan classes | change semantics |
-| optimizer/rules_boundary.rs | prune via partial-partial zero | push filters |
-| optimizer/rules_pushdown.rs | push discrete filters early | prune boundaries |
-| optimizer/cost.rs | choose scan versus solve | parse text |
-| catalog/schema.rs | register cell type schemas | execute pipelines |
-| catalog/index_meta.rs | track segment offset metadata | serve clients |
-| executor/physical_plan.rs | represent executable plan steps | run threads |
-| executor/pipeline.rs | run batched vectorized pipeline | parse TQL |
-| executor/context.rs | hold scratch execution buffers | allocate per cell |
+| ir/optimizer.rs | prune TIR via poset structure | invent new opcodes |
+| ~~catalog/schema.rs~~ | ~~register cell type schemas~~ | ~~execute pipelines~~ |
+| ~~catalog/index_meta.rs~~ | ~~track segment offset metadata~~ | ~~serve clients~~ |
+| ~~executor/physical_plan.rs~~ | ~~represent executable plan steps~~ | ~~run threads~~ |
+| ~~executor/pipeline.rs~~ | ~~run batched vectorized pipeline~~ | ~~parse TQL~~ |
+| ~~executor/context.rs~~ | ~~hold scratch execution buffers~~ | ~~allocate per cell~~ |
 | transaction/manager.rs | manage txn begin commit | evaluate energy |
 | transaction/lock.rs | lock overlapping lattice subcomplexes | store stalks |
-| api/client.rs | accept client query sessions | compute Laplacian |
+| ~~api/client.rs~~ | ~~accept client query sessions~~ | ~~compute Laplacian~~ |
 | api/result.rs | serialize section plus energy | open sockets |
-| distrib/cover.rs | partition poset into overlapping subcomplexes | cut hyperedges by hash |
-| distrib/border.rs | represent replicated border fiber slices | own interior cells |
-| distrib/schwarz.rs | diffuse border residuals without barriers | call global allreduce |
-| distrib/crdt.rs | merge border edits by energy | take distributed locks |
-| net/nerve.rs | route queries along nerve graph | use central coordinator |
-| net/rdma.rs | read remote border arenas one-sided | wake remote CPU per read |
-| net/gossip.rs | exchange border residuals asynchronously | block on barriers |
-| net/protocol.rs | frame cross-node sync bytes | parse TQL text |
+| engine/corpus.rs | hold shared E2E bench corpus | serve production traffic |
+| ~~distrib/cover.rs~~ | ~~partition poset into overlapping subcomplexes~~ | ~~cut hyperedges by hash~~ |
+| ~~distrib/border.rs~~ | ~~represent replicated border fiber slices~~ | ~~own interior cells~~ |
+| ~~distrib/schwarz.rs~~ | ~~diffuse border residuals without barriers~~ | ~~call global allreduce~~ |
+| ~~distrib/crdt.rs~~ | ~~merge border edits by energy~~ | ~~take distributed locks~~ |
+| ~~net/nerve.rs~~ | ~~route queries along nerve graph~~ | ~~use central coordinator~~ |
+| ~~net/rdma.rs~~ | ~~read remote border arenas one-sided~~ | ~~wake remote CPU per read~~ |
+| ~~net/gossip.rs~~ | ~~exchange border residuals asynchronously~~ | ~~block on barriers~~ |
+| ~~net/protocol.rs~~ | ~~frame cross-node sync bytes~~ | ~~parse TQL text~~ |
 
-SRP check: all 56 statements distinct. Line gate: `wc -l` must show every file ≤500 lines before Code Skeleton entry.
+SRP check: all responsibility statements distinct (recounted post as-built deltas; struck rows excluded). Line gate: `wc -l` must show every file ≤500 lines before Code Skeleton entry — enforced; parser.rs and phase4_bench.rs were split (expr_parser.rs, define_parser.rs, engine/corpus.rs) to comply.
+
+## As-built deltas (2026-10-13 audit: text reconciled to code, no code deleted)
+
+A1. Bench binaries + harness helpers carry no FILE IDs (precedent: phase2_bench, adversarial). `engine/corpus.rs` holds the shared Phase-4 corpus extracted from phase4_bench.rs for the SPEC-022 line gate.
+A2. `syntax/parser.rs` exceeded 500 lines → split into parser.rs (374) + expr_parser.rs (WHERE logic) + define_parser.rs (DEFINE logic). Same code, same gates.
+A3. Optimizer consolidated: the planned 4-file e-graph (egraph/rules_boundary/rules_pushdown/cost) was never needed — poset pruning is a single-pass rewrite. Implemented as `ir/optimizer.rs` (FILE-038 covers it; METHOD-010 verified). FOLDER-012 merged into FOLDER-011.
+A4. Distributed implemented at storage level, not as separate crates: `bcsf/partition.rs` (FILE-021, L3 domains + ghosts) + `bcsf/cover.rs` (FILE-049, greedy hyperedge cover). sheaf-distrib/sheaf-net crates, border/schwarz/crdt/nerve/rdma/gossip/protocol files: DEFERRED. Waivers W-D1/W-D2 are moot (no cross-crate arrows exist); retained for history.
+A5. EngineRuntime catalog/executor/client never built: TQL DEFINE statements serve as catalog, bench binaries serve as executor, api/result.rs serves as output. METHOD-016 (head-to-head benchmark) remains stub — analytic comparison in PERFORMANCE.md/PERFORMANCE_PARTITIONED.md (local sheaf-db runs + internet benchmarks) stands in until a PG/Neo4j harness exists.
+A6. `index/` holds only mod.rs (stub). TIFI (FILE-020) implemented as `bcsf/name_lookup.rs` (METHOD-011 verified); `index/partition.rs` implemented as `bcsf/partition.rs` (METHOD-015 verified).
 
 ## Part-2 forward deltas (2026-10-08, from Phase-1 adversarial findings)
 

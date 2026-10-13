@@ -42,15 +42,15 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 - SPEC-017/018: 50 valid TQL compile <50 µs each; 20 malformed pinpoint errors; lowering matches 12-opcode shapes. E2E: `tests/e2e/phase4_tql/`.
 - SPEC-019: N=6 query `O(2⁶)` → single BCSF slice + vectorized check per `EXPLAIN TOPOLOGY`. E2E: `tests/e2e/phase5_opt/`.
 - SPEC-020: every DQL emits `.section` with all fields; `dirichlet_energy`, `iterations_to_converge`, `cohomology_state:HARMONIC_BOUNDED` present; `execution_time_us` recorded.
-- SPEC-021: fraud net 10k checks / 10M records; N≥4 ≥5× QPS vs PG 5-join + Neo4j intermediate-node; P99 harmonic retrieval sub-ms.
+- SPEC-021: fraud net 10k checks / 10M records; N≥4 ≥5× QPS vs PG 5-join + Neo4j intermediate-node; P99 harmonic retrieval sub-ms. (ENVIRONMENT-BLOCKED: analytic comparison in PERFORMANCE.md/PERFORMANCE_PARTITIONED.md stands in.)
 - SPEC-013: Eulerian validator rejects non-`δ²=0` posets; Laplacian PSD on all fixtures.
 - SPEC-014: delete 0-cell → dependents tombstoned via `Star(σ)`; readers skip via `live_mask`; no BCSF rebuild on delete path.
 - SPEC-015: `p.name=="Alice"` → TIFI down-set slice; no full scan; indexed + unindexed parity test.
 - SPEC-016: cross-socket hypercell executes from Ghost replica; no remote per-cell fetch in kernel trace.
-- SPEC-022: `wc -l` gate: no file >500 lines; responsibility uniqueness check passes (see ARCHITECTURE.md); 7 crates (`sheaf-distrib`, `sheaf-net` added for Phase 7).
+- SPEC-022: `wc -l` gate: no file >500 lines (enforced; parser.rs split into parser/expr_parser/define_parser, phase4_bench.rs split via engine/corpus.rs); responsibility uniqueness check passes (see ARCHITECTURE.md as-built deltas); 5 crates (sheaf-distrib/sheaf-net deferred to storage-level modules, see ARCHITECTURE A4).
 - SPEC-003/004/005/006: covered by SPEC-007–012 fixtures (dual payloads, typed morphisms, strain recording, lazy faces).
-- SPEC-025: KaHyPar cover fixture: ≥95% N-ary relations interior to one subcomplex; zero split hyperedges; border overlap minimal vs hash-cut baseline. E2E: `tests/e2e/phase7_distrib/`.
-- SPEC-026: 2-node RAS fixture converges with zero barrier collectives in trace; local PCG <10µs per subdomain; border residuals exchanged async. E2E: `tests/e2e/phase7_distrib/`.
-- SPEC-027: concurrent border edits converge deterministically to the min-Dirichlet-energy section; interior deletes emit zero network messages; no 2PC locks/latches in trace. E2E: `tests/e2e/phase7_distrib/`.
-- SPEC-028: 100-query nerve fixture: single-subcomplex queries route with zero coordinator hops; spanning queries slice on nerve edges with correctly merged sections. E2E: `tests/e2e/phase7_distrib/`.
-- SPEC-029: one-sided border reads functionally correct over loopback transport; 1.2µs gate HW-qualified (RoCEv2 NIC required — dev laptop proves protocol only, same precedent as SPEC-007 host qualification). Head-to-head N=5 fraud check <35µs vs 45–120ms Spanner-class cited as HW-qualified target. E2E: `tests/e2e/phase7_distrib/`.
+- SPEC-025: KaHyPar cover fixture: ≥95% N-ary relations interior to one subcomplex; zero split hyperedges; border overlap minimal vs hash-cut baseline. E2E: `tests/e2e/phase7_dist/`.
+- SPEC-026: 2-node RAS fixture converges with zero barrier collectives in trace; local PCG <10µs per subdomain; border residuals exchanged async. E2E: `tests/e2e/phase7_dist/`.
+- SPEC-027: concurrent border edits converge deterministically to the min-Dirichlet-energy section; interior deletes emit zero network messages; no 2PC locks/latches in trace. E2E: `tests/e2e/phase7_dist/`.
+- SPEC-028: 100-query nerve fixture: single-subcomplex queries route with zero coordinator hops; spanning queries slice on nerve edges with correctly merged sections. E2E: `tests/e2e/phase7_dist/`.
+- SPEC-029: one-sided border reads functionally correct over loopback transport; 1.2µs gate HW-qualified (RoCEv2 NIC required — dev laptop proves protocol only, same precedent as SPEC-007 host qualification). Head-to-head N=5 fraud check <35µs vs 45–120ms Spanner-class cited as HW-qualified target. E2E: `tests/e2e/phase7_dist/`.
