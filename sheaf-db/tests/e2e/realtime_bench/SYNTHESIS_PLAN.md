@@ -98,13 +98,20 @@ Applying Choice 1's SIMD and zero-join execution kernels directly to Choice 2's 
 ## 6. Stage log (appended as stages complete)
 
 ### Stage 1a — Arrow slab (DONE 2026-10-14)
-`bcsf/arrow_layout.rs` (64B-aligned values + validity bitmap, zero-dep) + `arrow_scan_bench` gates: align PASS, sum exact (rel 9.65e-15 vs tpch_scan), scan 13–17 ms =PID 2.2× regression vs 7.9 ms baseline — cause: per-row validity-bit checks. Finding recorded: validity checking costs ~10 ms/6M rows; kernels skip bit checks by compact-first contract.
+`bcsf/arrow_layout.rs` (64B-aligned values + validity bitmap, zero-dep) + `arrow_scan_bench` gates: align PASS, sum exact (rel 9.65e-15 vs tpch_scan), scan 13–17 ms ≈ 2.2× regression vs 7.9 ms baseline — cause: per-row validity-bit checks. Finding recorded: validity checking costs ~10 ms/6M rows; kernels skip bit checks by compact-first contract.
 
 ### Stage 1b — FMA kernel (DONE 2026-10-14, mixed — then CORRECTED)
+`simd/fma_scan.rs` (morsels + prefetch + AVX-512 gather path; chip confirmed avx512-capable). **Bug caught by the 1e-6 gate:** f32 vector-lane accumulation over 375k chunks drifted 7.55e-6 (ulp(1e10)=2048 quantization) — fixed via per-chunk f64 flush → rel 9.94e-10 PASS. **Negative result:** gather path slower than autovectorized scalar; SoA transpose follow-up also lost (26–29 ms vs interleaved ~30 ms process-level — layout barely matters, DuckDB 6.4 ms wins ~5×). 2.8 ms prediction REFUTED (needs ~16 GB/s sustained; box delivers ~1.6 GB/s here).
 
 ### Methodology finding: in-process best-of-N is INVALID for pure loops (2026-10-14)
 SoA investigation proved it: per-rep times 0.0/0.0/27.9 ms with correct sums — scalar evolution hoists the invariant sum out of timed regions (defeated reference-black_box AND rep-seed; only process-level repetition is immune). Re-measurement at process level: tpch interleaved **29–33 ms** (not 7.9), SoA **26–29 ms**, i.e. layouts tie at ~30 ms. Consequences applied: tpch_scan.json corrected, Test 1 verdict corrected to **DuckDB wins ~5×** (6.4 vs ~30 ms), 2.8 ms prediction marked REFUTED (would need ~16 GB/s sustained; box delivers ~1.6 GB/s on this pattern). Prior project gates unaffected (they time varying inputs or sink-defeated loops, not fixed-input pure reps).
 
 ### Stage 2 — graded WAL (DONE 2026-10-14, PASS)
 `lsp/graded_log.rs` (per-dim logs + monotonic watermark) + `graded_wal_bench`: any-order arrival PASS, premature seal(2)/seal(1) rejected PASS, watermark 1→2→3 PASS, replay exact [(0,300),(1,50),(2,100)] PASS. Down-closure holds by construction: durability commits graded 0→1→K regardless of arrival order.
-`simd/fma_scan.rs` (morsels + prefetch + AVX-512 gather path; chip confirmed avx512-capable). **Bug caught by the 1e-6 gate:** f32 vector-lane accumulation over 375k chunks drifted 7.55e-6 (ulp(1e10)=2048 quantization) — fixed via per-chunk f64 flush → rel 9.94e-10 PASS. **Negative result:** gather path 8–42 ms (variance + gather throughput), SLOWER than the compiler-autovectorized scalar loop (7.9 ms). Lesson: manual AVX-512 gather < LLVM autovectorization on strided data. Follow-up: SoA transpose for unit-stride loads (gate 5).
+Design fix during Stage 3 integration: absent dims are vacuously sealed (a dim with no cells cannot block the watermark); seal checks only PRESENT lower dims, watermark skips absent ones bounded by max present dim. Stage-2 gates re-verified unchanged (all dims present there).
+
+### Stage 3 — HW-CRC ring WAL (DONE 2026-10-14, PASS)
+`lsp/ring_wal.rs` (MPSC ring, 64B slots, CRC-32C HW/SW) + `ring_wal_bench`: CRC agree PASS (10k), MPSC 40000/40000 PASS, latency p50 100 ns / p99 200 ns (target ≤ 800 ns — beats SQLite 2.1 µs by 21×), graded fusion PASS (watermark=3). Vacous-absent-dim rule added to seal (see Stage 2 note).
+
+### Stage 4 — incidence fibers (DONE 2026-10-14, PASS)
+`fiber_join_bench`: pre-fold sorts lineitem runs + orders once (1.8 s, index-like, untimed); timed pure-streaming merge-walk 3.2–3.6 ms best-of-3 processes, totals exact (rel 4.39e-12, segs match join_bench). **Beats DuckDB 158 ms by 44×, PG 3.04 s by 844×.** Bugs caught en route: (1) monotonic-cursor merge requires both sides sorted by join key (3.1M vs 93.5B mismatch diagnosed + fixed); (2) binary-search variant correct but slow (640 ms) → pure streaming won. Design validated: pre-fold once, stream forever; zero hashes, zero searches.
