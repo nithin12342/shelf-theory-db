@@ -1,39 +1,71 @@
 {
-  "counts": {
-    "customer": 150000,
-    "orders": 1500000,
-    "lineitem": 6001215,
-    "part": 200000,
-    "partsupp": 800000
+  "run1_first": {
+    "duckdb_version": "1.5.4",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 3861.2,
+      "p99": 8041.0,
+      "n": 20000
+    },
+    "point_lookup_indexed_us": {
+      "p50": 1075.1,
+      "p99": 2810.2,
+      "n": 20000
+    },
+    "point_lookup_batched_us_per_row": {
+      "p50": 0.2,
+      "n": 20000,
+      "reps": 5
+    },
+    "join_ms": {
+      "p50": 410.8,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 17.9,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2725.8,
+      "p99": 6543.7,
+      "n": 10000
+    }
   },
-  "duckdb_version": "1.5.4",
-  "point_lookup_us": {
-    "p50": 3861.2,
-    "p99": 8041.0,
-    "n": 20000
+  "run2_quiet_box": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 1100.1,
+      "p99": 4105.6,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 158.3,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 6.4,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2415.4,
+      "p99": 6086.8,
+      "n": 10000
+    }
   },
-  "join_ms": {
-    "p50": 410.8,
-    "rows": 100,
-    "n": 3
-  },
-  "scan_agg_ms": {
-    "p50": 17.9,
-    "n": 5
-  },
-  "insert_us": {
-    "p50": 2725.8,
-    "p99": 6543.7,
-    "n": 10000
-  },
-  "point_lookup_indexed_us": {
-    "p50": 1075.1,
-    "p99": 2810.2,
-    "n": 20000
-  },
-  "point_lookup_batched_us_per_row": {
-    "p50": 0.2,
-    "n": 20000,
-    "reps": 5
-  }
+  "note": "run2 quiet box much faster (join 158 vs 411ms, scan 6.4 vs 17.9ms). Test 1 verdict flips: DuckDB 6.4ms beats sheaf-db 7.9ms quiet \u2014 parity zone, honest rematch recorded."
 }

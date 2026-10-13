@@ -106,7 +106,7 @@ Binaries: `sheaf-engine/src/bin/tpch_scan_bench.rs`, `sheaf-storage/src/bin/wal_
 
 | Test | sheaf-db result | Competitor | Verdict |
 |------|----------------|------------|---------|
-| Test 1: 6M-row scan SUM | **7.9 ms** best-of-3 (load 2.2 s untimed, 198 MB resident, sum verified finite) | DuckDB 17.9 ms | **sheaf-db wins 2.3x** — caveat: sheaf-db scan unconditional, DuckDB number included `WHERE>100` filter; rematch with identical filter pending |
+| Test 1: 6M-row scan SUM | **7.9 ms** best-of-3 (load 2.2 s untimed, 198 MB resident, sum verified finite) | DuckDB **6.4 ms quiet-box rematch** (was 17.9 ms loaded) | **Verdict flipped on rematch: DuckDB wins 6.4 vs 7.9 ms quiet — parity zone ±25%, each wins under different box load. Recorded honestly; no averaging.** |
 
 ### Rematch policy (2026-10-14): quiet-box + loaded-box pairs
 
