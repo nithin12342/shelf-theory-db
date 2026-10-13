@@ -1,6 +1,17 @@
 # sheaf-db Performance Comparison vs Database Landscape
 
-## sheaf-db Measured Performance (this build, i7-1165G7, 45% background load)
+## Data Provenance
+
+| Source | Method | Hardware |
+|--------|--------|----------|
+| **sheaf-db** | **Actually executed on this machine** — `sheaf_db_app.exe` binary, median-of-5 runs | i7-1165G7, 45% background load, Windows 11 |
+| All other databases | **Taken from internet benchmark reports** (2024-2025) — see sources below | Various (AWS c5d.metal, M1 Max, etc.) |
+
+**Internet sources**: SQLite-vs-Postgres benchmark (github.com/andrecasal), ScyllaDB-vs-Cassandra benchmark (scylladb.com), PostgreSQL pgbench (github.com/Vonng/pgtpc), MongoDB-vs-PostgreSQL (enterprisedb.com whitepaper), Neo4j-vs-PostgreSQL (github.com/joelonsql), Percona MySQL benchmark 2026, DB-Engines ranking.
+
+> **Caution**: Cross-database comparisons are inherently imprecise — different hardware, workloads, and measurement methodologies. sheaf-db numbers are directly measured; others are vendor/community benchmarks not independently verified here.
+
+## sheaf-db Measured Performance (actually executed, i7-1165G7, 45% background load)
 
 | Metric | Value | Notes |
 |--------|-------|-------|
