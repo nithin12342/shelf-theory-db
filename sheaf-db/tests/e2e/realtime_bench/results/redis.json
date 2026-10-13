@@ -1,16 +1,35 @@
 {
-  "redis_version": "5.0.14.1",
-  "load_s": 48.1,
-  "dbsize": 1000000,
-  "used_memory_mb": 121.0,
-  "point_lookup_us": {
-    "p50": 429.7,
-    "p99": 715.6,
-    "n": 20000
+  "run1_quiet_box": {
+    "redis_version": "5.0.14.1",
+    "load_s": 48.1,
+    "dbsize": 1000000,
+    "used_memory_mb": 121.0,
+    "point_lookup_us": {
+      "p50": 429.7,
+      "p99": 715.6,
+      "n": 20000
+    },
+    "lua_5key_us": {
+      "p50": 491.0,
+      "p99": 783.9,
+      "n": 2000
+    }
   },
-  "lua_5key_us": {
-    "p50": 491.0,
-    "p99": 783.9,
-    "n": 2000
-  }
+  "run2_loaded_box": {
+    "redis_version": "5.0.14.1",
+    "load_s": 64.9,
+    "dbsize": 1000000,
+    "used_memory_mb": 121.0,
+    "point_lookup_us": {
+      "p50": 516.9,
+      "p99": 1004.1,
+      "n": 20000
+    },
+    "lua_5key_us": {
+      "p50": 524.0,
+      "p99": 1208.4,
+      "n": 2000
+    }
+  },
+  "note": "run2 within 1.2x of run1 (box reasonably quiet); both kept per policy"
 }

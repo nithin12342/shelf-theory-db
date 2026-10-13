@@ -1,30 +1,63 @@
 {
-  "engine": "mariadb",
-  "version": "13.0.2-MariaDB",
-  "counts": {
-    "customer": 150000,
-    "orders": 1500000,
-    "lineitem": 6001215,
-    "part": 200000,
-    "partsupp": 800000
+  "run1_quiet_box": {
+    "engine": "mariadb",
+    "version": "13.0.2-MariaDB",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 214.0,
+      "p99": 891.3,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 29812.2,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 1521.3,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 68.1,
+      "p99": 356.4,
+      "n": 10000
+    }
   },
-  "point_lookup_us": {
-    "p50": 214.0,
-    "p99": 891.3,
-    "n": 20000
+  "run2_loaded_box": {
+    "engine": "mariadb",
+    "version": "13.0.2-MariaDB",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 206.8,
+      "p99": 1047.9,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 52887.6,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 2815.3,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 392.9,
+      "p99": 1230.8,
+      "n": 10000
+    }
   },
-  "join_ms": {
-    "p50": 29812.2,
-    "rows": 100,
-    "n": 3
-  },
-  "scan_agg_ms": {
-    "p50": 1521.3,
-    "n": 5
-  },
-  "insert_us": {
-    "p50": 68.1,
-    "p99": 356.4,
-    "n": 10000
-  }
+  "note": "run2 slower across the board (join 1.8x, scan 1.9x, insert 5.8x) under background load; both kept per host-qualification precedent, never averaged"
 }

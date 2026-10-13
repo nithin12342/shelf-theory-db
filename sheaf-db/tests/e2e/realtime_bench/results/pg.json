@@ -1,30 +1,63 @@
 {
-  "engine": "pg",
-  "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
-  "counts": {
-    "customer": 150000,
-    "orders": 1500000,
-    "lineitem": 6001215,
-    "part": 200000,
-    "partsupp": 800000
+  "run1_quiet_box": {
+    "engine": "pg",
+    "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 108.0,
+      "p99": 341.1,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 3041.0,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 334.3,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 104.6,
+      "p99": 333.6,
+      "n": 10000
+    }
   },
-  "point_lookup_us": {
-    "p50": 108.0,
-    "p99": 341.1,
-    "n": 20000
+  "run2_loaded_box": {
+    "engine": "pg",
+    "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 443.1,
+      "p99": 896.1,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 8530.2,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 1453.2,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 432.6,
+      "p99": 925.6,
+      "n": 10000
+    }
   },
-  "join_ms": {
-    "p50": 3041.0,
-    "rows": 100,
-    "n": 3
-  },
-  "scan_agg_ms": {
-    "p50": 334.3,
-    "n": 5
-  },
-  "insert_us": {
-    "p50": 104.6,
-    "p99": 333.6,
-    "n": 10000
-  }
+  "note": "run2 ~3-4x slower across the board (concurrent downloads + background load); both kept per precedent"
 }
