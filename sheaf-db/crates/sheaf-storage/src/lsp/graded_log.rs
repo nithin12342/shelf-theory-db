@@ -67,7 +67,7 @@ impl GradedWal {
     /// Replay every sealed dimension in graded order. Returns per-dim counts.
     pub fn replay_sealed(&self) -> std::io::Result<Vec<(u8, usize)>> {
         let mut out = Vec::new();
-        for (&dim, _) in self.logs.iter() {
+        for &dim in self.logs.keys() {
             if self.sealed.get(&dim).copied().unwrap_or(false) {
                 let path = self.dir.join(format!("dim{}.wal", dim));
                 let (recs, truncated) = replay(&path)?;
