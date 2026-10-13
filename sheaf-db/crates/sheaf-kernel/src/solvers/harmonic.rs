@@ -43,6 +43,10 @@ pub fn harmonic_relax_target(
         cfg.n_threads,
     );
     let energy = dirichlet_energy(&lap.ops, &x);
+    // Final energy check: the monitor may not have been called after the last
+    // CG step (e.g., tol reached before check_every aligned). Ensure target_hit
+    // reflects the true final energy.
+    hit = hit || energy <= cfg.energy_target;
     let r = HarmonicResult { iters: cg.iters, rel_residual: cg.rel_residual, energy, target_hit: hit };
     (x, r, hit)
 }
