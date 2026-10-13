@@ -1,1 +1,11 @@
-{"criterion_duckdb_ms":17.9,"dataset":"D:\\bench\\build\\tpch-dbgen\\lineitem.tbl","gate_scan":"PASS (beat DuckDB)","load_s":2.2,"resident_MB":198.0,"rows":6001215,"scan_sum_best_ms":7.9,"scan_sum_reps":3,"scan_sum_value":218102223881.86,"verdict":"sheaf-db wins 2.3x; caveat: sheaf-db scan unfiltered, DuckDB number included WHERE>100 filter"}
+{
+  "rows": 6001215,
+  "load_s": 2.2,
+  "resident_MB": 198.0,
+  "scan_ms_process_level": [
+    31.1,
+    33.4,
+    29.4
+  ],
+  "verdict": "CORRECTED: earlier 7.9ms was in-process best-of-3 hoisting artifact. True speed ~30ms. DuckDB 6.4ms wins ~5x. See SYNTHESIS_PLAN stage log for methodology finding."
+}

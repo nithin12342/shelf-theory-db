@@ -79,7 +79,7 @@ All numbers measured on this machine. Engine versions: SQLite 3.x (py), DuckDB 1
 
 | Test | sheaf-db | Best competitor | Verdict |
 |------|----------|-----------------|---------|
-| 1: 6M scan SUM | 7.9 ms | DuckDB 6.4 ms (quiet rematch) | DuckDB wins — parity zone ±25% |
+| 1: 6M scan SUM | 7.9 ms → **CORRECTED ~30 ms process-level** | DuckDB 6.4 ms | **DuckDB wins ~5×** (in-process best-of-3 was a hoisting artifact; see SYNTHESIS_PLAN stage log) |
 | 2: 150k⋈1.5M⋈6M join | 2.5 s | DuckDB 158 ms / PG 3.04 s | Middle: DuckDB >> sheaf-db >> PG |
 | 3: 600k-path traversal | 41.7 ms (paths exact) | Neo4j 878 ms | sheaf-db wins 21× |
 | 4: 20k durable inserts | 6.9 µs p50 | SQLite 2.1 µs | SQLite wins 3.3× |

@@ -57,23 +57,20 @@ fn main() {
     println!("scan_load: rows={} load_s={:.1} resident_MB={:.1}", n, load_s,
         reader.resident_bytes() as f64 / 1e6);
 
-    // ---- Gate: timed slab sum x3 ----
+    // ---- Gate: single timed rep (NOT in-process best-of-3: scalar evolution
+    // hoists invariant pure-loop sums out of timed regions — see SYNTHESIS_PLAN
+    // methodology finding. Repeat at PROCESS level, take best across runs.)
     let slab = &reader.arena.stalks;
     assert_eq!(slab.len(), n * 2);
-    let mut best_ms = f64::MAX;
-    let mut sum = 0f64;
-    for _ in 0..3 {
-        let t0 = Instant::now();
-        let mut acc = 0f64;
-        let mut i = 0usize;
-        while i < slab.len() {
-            acc += slab[i] as f64 * (1.0 - slab[i + 1] as f64);
-            i += 2;
-        }
-        let dt = t0.elapsed().as_secs_f64() * 1e3;
-        best_ms = best_ms.min(dt);
-        sum = acc;
+    let t0 = Instant::now();
+    let mut acc = 0f64;
+    let mut i = 0usize;
+    while i < slab.len() {
+        acc += slab[i] as f64 * (1.0 - slab[i + 1] as f64);
+        i += 2;
     }
-    println!("scan_sum: best_ms={:.1} (3 reps) sum={:.2} target_duckdb_ms=17.9", best_ms, sum);
-    println!("gate_scan={}", if best_ms < 17.9 { "PASS (beat DuckDB)" } else { "RECORDED (DuckDB wins)" });
+    let sum = acc;
+    let rep_ms = t0.elapsed().as_secs_f64() * 1e3;
+    println!("scan_sum: rep_ms={:.1} (single rep; run binary 3x, take best) sum={:.2} target_duckdb_ms=6.4", rep_ms, sum);
+    println!("gate_scan={}", if rep_ms < 6.4 { "PASS (beat DuckDB)" } else { "RECORDED (DuckDB wins)" });
 }
