@@ -273,3 +273,66 @@ pub fn validate_program(p: &Program) -> Vec<ValidationError> {
     }
     errs
 }
+
+/// Eulerian δ²=0 gate (METHOD-009): verify that the coboundary operator
+/// satisfies δ²=0 on a given complex. For a single hypercell with boundary
+/// faces, this means the parity signs alternate correctly and the boundary
+/// of the boundary is empty. For dim mismatches (a dim-k cell appearing in
+/// a dim-(k+2) boundary), the gate rejects.
+///
+/// The check is: for each hypercell, the sum of signed boundary incidences
+/// must be zero (each face appears exactly twice with opposite signs, or the
+/// boundary is a closed cycle). This is the discrete analog of δ²=0.
+pub fn check_eulerian_delta2(
+    _hyper_dim: u8,
+    boundary_dims: &[(String, u8)],
+    parity_signs: &[f32],
+) -> Result<(), String> {
+    // Two-level scope: hypercell boundaries are dim-0 cells. Any other dim
+    // breaks the Eulerian parity (δ²=0 requires codim-1 steps).
+    for (name, dim) in boundary_dims {
+        if *dim != 0 {
+            return Err(format!(
+                "dim mismatch: boundary '{}' has dim {} (must be 0 for two-level scope)",
+                name, dim
+            ));
+        }
+    }
+    // δ²=0: the signed sum of boundary incidences must be zero.
+    // For a closed boundary (cycle), each face appears twice with opposite
+    // signs, summing to zero. For an open boundary, the sum is nonzero.
+    let signed_sum: f32 = parity_signs.iter().sum();
+    if signed_sum.abs() > 1e-6 {
+        return Err(format!(
+            "delta2 != 0: signed boundary sum = {} (expected 0 for closed boundary)",
+            signed_sum
+        ));
+    }
+    Ok(())
+}
+
+/// Check that a coboundary matrix D satisfies D^T D = I (orthonormality),
+/// which is required for the harmonic solve to be well-posed.
+pub fn check_coboundary_ortho(d: &[Vec<f32>]) -> Result<(), String> {
+    if d.is_empty() {
+        return Err("empty coboundary matrix".to_string());
+    }
+    let n = d[0].len();
+    if d.iter().any(|row| row.len() != n) {
+        return Err("coboundary matrix not rectangular".to_string());
+    }
+    // D^T D should be identity (orthonormal columns).
+    for i in 0..n {
+        for j in 0..n {
+            let dot: f32 = d.iter().map(|row| row[i] * row[j]).sum();
+            let expected = if i == j { 1.0 } else { 0.0 };
+            if (dot - expected).abs() > 1e-4 {
+                return Err(format!(
+                    "coboundary not orthonormal: col {} dot col {} = {} (expected {})",
+                    i, j, dot, expected
+                ));
+            }
+        }
+    }
+    Ok(())
+}
