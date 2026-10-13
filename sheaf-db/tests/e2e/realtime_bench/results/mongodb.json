@@ -1,0 +1,28 @@
+{
+  "mongo_version": "9.0.2",
+  "load_s": 3.8,
+  "counts": {
+    "customers": 100000,
+    "orders": 100000,
+    "items": 100000,
+    "payments": 100000,
+    "shipments": 100000
+  },
+  "mixed_32t": {
+    "ops": 16000,
+    "wall_s": 6.4,
+    "throughput": 2497.0,
+    "p50_us": 9470.0,
+    "p99_us": 46769.6
+  },
+  "lookup4_unindexed_ms": {
+    "p50": 12058.4,
+    "rows": 200,
+    "n": 5
+  },
+  "lookup4_indexed_ms": {
+    "p50": 79.6,
+    "rows": 200,
+    "n": 5
+  }
+}

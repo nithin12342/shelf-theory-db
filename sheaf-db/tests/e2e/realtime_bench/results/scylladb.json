@@ -1,0 +1,26 @@
+{
+  "scylla_version": "3.0.8",
+  "load_s": 137.3,
+  "counts": {
+    "kv": 500000
+  },
+  "range_slice_ms": {
+    "ms": 65.0,
+    "rows": 10000
+  },
+  "flood_read_us": {
+    "p50": 825.2,
+    "p99": 3426.0,
+    "n": 2001
+  },
+  "point_lookup_hotload_us": {
+    "p50": 15439.2,
+    "p99": 18868.3,
+    "n": 5000
+  },
+  "point_lookup_settled_us": {
+    "p50": 11688.7,
+    "p99": 18775.4,
+    "n": 5000
+  }
+}

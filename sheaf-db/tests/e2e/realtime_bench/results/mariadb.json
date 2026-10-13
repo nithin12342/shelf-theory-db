@@ -1,0 +1,30 @@
+{
+  "engine": "mariadb",
+  "version": "13.0.2-MariaDB",
+  "counts": {
+    "customer": 150000,
+    "orders": 1500000,
+    "lineitem": 6001215,
+    "part": 200000,
+    "partsupp": 800000
+  },
+  "point_lookup_us": {
+    "p50": 214.0,
+    "p99": 891.3,
+    "n": 20000
+  },
+  "join_ms": {
+    "p50": 29812.2,
+    "rows": 100,
+    "n": 3
+  },
+  "scan_agg_ms": {
+    "p50": 1521.3,
+    "n": 5
+  },
+  "insert_us": {
+    "p50": 68.1,
+    "p99": 356.4,
+    "n": 10000
+  }
+}
