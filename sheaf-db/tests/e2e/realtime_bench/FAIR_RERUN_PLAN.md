@@ -107,6 +107,8 @@ Binaries: `sheaf-engine/src/bin/tpch_scan_bench.rs`, `sheaf-storage/src/bin/wal_
 | Test | sheaf-db result | Competitor | Verdict |
 |------|----------------|------------|---------|
 | Test 1: 6M-row scan SUM | **7.9 ms** best-of-3 (load 2.2 s untimed, 198 MB resident, sum verified finite) | DuckDB **6.4 ms quiet-box rematch** (was 17.9 ms loaded) | **Verdict flipped on rematch: DuckDB wins 6.4 vs 7.9 ms quiet — parity zone ±25%, each wins under different box load. Recorded honestly; no averaging.** |
+| Test 3: 2.25M-node traversal | **41.7 ms full 600k-path rollup** (path count exact), **0.8 µs sampled 2-hop**; load 1.4 s, 151 MB | Neo4j 878 ms full / 3.3 ms sampled | **sheaf-db wins 21× full, ~4000× sampled.** Flat-slab boundary walk vs pointer chasing. |
+| Test 5: 32-thread mixed 50/50 | **217,522 ops/s**, p50 5.8 µs, p99 1.47 ms (32k ops; lock-free reads + single-mutex WAL writes) | MongoDB 2,497 ops/s, p50 9.47 ms | **sheaf-db wins 87× throughput** — caveat: different work per op (slab fetch + WAL frame vs doc read/write); p99 shows write-mutex contention spikes. |
 
 ### Rematch policy (2026-10-14): quiet-box + loaded-box pairs
 
