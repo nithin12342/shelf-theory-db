@@ -56,9 +56,9 @@ fn fused_sum_unrolled(slab: &[f32], d: usize, p: usize, q: usize) -> f64 {
                 _mm_prefetch(slab.as_ptr().add(ahead) as *const i8, _MM_HINT_T0);
             }
         }
-        for k in 0..4 {
+        for (k, a) in acc.iter_mut().enumerate() {
             let b = (r + k) * d;
-            acc[k] += slab[b + p] as f64 * (1.0 - slab[b + q] as f64);
+            *a += slab[b + p] as f64 * (1.0 - slab[b + q] as f64);
         }
         r += 4;
     }
