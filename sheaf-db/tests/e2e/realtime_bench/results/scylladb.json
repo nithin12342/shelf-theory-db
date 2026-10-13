@@ -1,26 +1,50 @@
 {
-  "scylla_version": "3.0.8",
-  "load_s": 137.3,
-  "counts": {
-    "kv": 500000
+  "run1_first_install": {
+    "scylla_version": "3.0.8",
+    "load_s": 137.3,
+    "counts": {
+      "kv": 500000
+    },
+    "point_lookup_hotload_us": {
+      "p50": 15439.2,
+      "p99": 18868.3,
+      "n": 5000
+    },
+    "point_lookup_settled_us": {
+      "p50": 11688.7,
+      "p99": 18775.4,
+      "n": 5000
+    },
+    "range_slice_ms": {
+      "ms": 65.0,
+      "rows": 10000
+    },
+    "flood_read_us": {
+      "p50": 825.2,
+      "p99": 3426.0,
+      "n": 2001
+    }
   },
-  "range_slice_ms": {
-    "ms": 65.0,
-    "rows": 10000
+  "run2_reinstall": {
+    "scylla_version": "3.0.8",
+    "load_s": 154.8,
+    "counts": {
+      "kv": 500000
+    },
+    "point_lookup_us": {
+      "p50": 15652.0,
+      "p99": 17383.1,
+      "n": 5000
+    },
+    "range_slice_ms": {
+      "ms": 63.1,
+      "rows": 10000
+    },
+    "flood_read_us": {
+      "p50": 803.6,
+      "p99": 5211.8,
+      "n": 2001
+    }
   },
-  "flood_read_us": {
-    "p50": 825.2,
-    "p99": 3426.0,
-    "n": 2001
-  },
-  "point_lookup_hotload_us": {
-    "p50": 15439.2,
-    "p99": 18868.3,
-    "n": 5000
-  },
-  "point_lookup_settled_us": {
-    "p50": 11688.7,
-    "p99": 18775.4,
-    "n": 5000
-  }
+  "note": "remarkably consistent: point 11.7-15.7ms band both runs; uncompacted-fresh-load caveat stands. Both kept."
 }
