@@ -38,3 +38,9 @@
 ## Final verdicts (unchanged from close)
 
 Test 1: DuckDB wins (6.4 vs 7.9 ms) · Test 2: middle (DuckDB 158ms >> 2.5s >> PG 3.04s) · Test 3: sheaf-db wins 21× · Test 4: SQLite wins 3.3× · Test 5: sheaf-db wins 87×
+
+## Post-close: synthesis stages + full rematch sweep (2026-10-14)
+
+- Stages 1a (Arrow slab), 1b (FMA kernel: f32-drift bug caught/fixed; gather slower than scalar — negative result), 2 (graded WAL PASS), 3 (HW-CRC ring: 100ns inserts, 21× SQLite; CRC-32C vs ISO-HDLC layered finding), 4 (incidence fibers 3.2 ms, 44× DuckDB).
+- Methodology correction: in-process best-of-N invalid for pure loops (hoisting proof 0.0/0.0/27.9ms); Test 1 corrected to DuckDB-wins-~5×; Test 2 superseded by fibers (sheaf-db WINS 44×); process-level repetition adopted.
+- Full rematch sweep post-synthesis: phases 1,2,3+adv,4,5+adv,6+adv,7+adv ALL PASS; new-bench gates (arrow/ring/graded/wal/join/fiber/mt/graph) ALL PASS; workspace clippy `-D warnings` clean.
