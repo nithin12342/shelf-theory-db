@@ -1,7 +1,7 @@
 # ARCHITECTURE + FILE DESIGN (Architecture → File Design gates)
 
 DIP layers: `domain/` (pure math incl. slice arithmetic, depends on nothing) → `application/` (orchestration incl. operators/solvers, depends on domain traits) → `infrastructure/` (BCSF/WAL/executor impls) → `interfaces/` (TQL text, .section, client API).
-Rule: import arrows point inward only (enforced by `pub(crate)` + `cargo check`; violation = return to Planning).
+Rule: import arrows point inward only (enforced by tests/dip_audit.sh — crate edges + folder arrows; violation = return to Planning).
 
 ## Folder tree (Phase 1 output; no file contents yet)
 
@@ -75,7 +75,7 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | syntax/ast.rs | represent match restrict emit | optimize plans |
 | ir/tir.rs | lower AST to TIR graph | run SIMD |
 | ir/validator.rs | reject dim cycles mismatches | choose plan cost |
-| ir/optimizer.rs | prune TIR via poset structure | invent new opcodes |
+| ir/optimizer.rs | prune TIR via poset structure | invent new opcodes (tripwire: a 13th opcode requires a SPEC-018 amendment + METHOD node, never a silent addition) |
 | ~~catalog/schema.rs~~ | ~~register cell type schemas~~ | ~~execute pipelines~~ |
 | ~~catalog/index_meta.rs~~ | ~~track segment offset metadata~~ | ~~serve clients~~ |
 | ~~executor/physical_plan.rs~~ | ~~represent executable plan steps~~ | ~~run threads~~ |
@@ -85,7 +85,7 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | transaction/lock.rs | lock overlapping lattice subcomplexes | store stalks |
 | ~~api/client.rs~~ | ~~accept client query sessions~~ | ~~compute Laplacian~~ |
 | api/result.rs | serialize section plus energy | open sockets |
-| engine/corpus.rs | hold shared E2E bench corpus | serve production traffic |
+| engine/bin-shared/corpus.rs | hold shared E2E bench corpus | link into library |
 | ~~distrib/cover.rs~~ | ~~partition poset into overlapping subcomplexes~~ | ~~cut hyperedges by hash~~ |
 | ~~distrib/border.rs~~ | ~~represent replicated border fiber slices~~ | ~~own interior cells~~ |
 | ~~distrib/schwarz.rs~~ | ~~diffuse border residuals without barriers~~ | ~~call global allreduce~~ |
@@ -104,6 +104,7 @@ A2. `syntax/parser.rs` exceeded 500 lines → split into parser.rs (374) + expr_
 A3. Optimizer consolidated: the planned 4-file e-graph (egraph/rules_boundary/rules_pushdown/cost) was never needed — poset pruning is a single-pass rewrite. Implemented as `ir/optimizer.rs` (FILE-038 covers it; METHOD-010 verified). FOLDER-012 merged into FOLDER-011.
 A4. Distributed implemented at storage level, not as separate crates: `bcsf/partition.rs` (FILE-021, L3 domains + ghosts) + `bcsf/cover.rs` (FILE-049, greedy hyperedge cover). sheaf-distrib/sheaf-net crates, border/schwarz/crdt/nerve/rdma/gossip/protocol files: DEFERRED. Waivers W-D1/W-D2 are moot (no cross-crate arrows exist); retained for history.
 A5. EngineRuntime catalog/executor/client never built: TQL DEFINE statements serve as catalog, bench binaries serve as executor, api/result.rs serves as output. METHOD-016 (head-to-head benchmark) remains stub — analytic comparison in PERFORMANCE.md/PERFORMANCE_PARTITIONED.md (local sheaf-db runs + internet benchmarks) stands in until a PG/Neo4j harness exists.
+ROADMAP (no code yet): a deployable service needs, in order: (1) executor pipeline over TIR (un-defer FILE-041/042), (2) client sessions (FILE-046), (3) catalog registry (FILE-039/040), (4) multi-node fabric (FOLDER-017/018). Each step re-enters the state machine at File Design with its own METHOD node; the shipped kernel/compiler/storage are the stable foundation, not the finished database.
 A6. `index/` holds only mod.rs (stub). TIFI (FILE-020) implemented as `bcsf/name_lookup.rs` (METHOD-011 verified); `index/partition.rs` implemented as `bcsf/partition.rs` (METHOD-015 verified).
 
 ## Part-2 forward deltas (2026-10-08, from Phase-1 adversarial findings)
@@ -115,7 +116,7 @@ A6. `index/` holds only mod.rs (stub). TIFI (FILE-020) implemented as `bcsf/name
 5. Registry discipline (F1): snapshot registers pin+gen atomically under one lock; install holds the same lock across min+prune — the prune set can never cover a live snapshot.
 6. Merge-window gating (F5): reader rate inside the merge call vs a thermally-adjacent post baseline (P1 is warmup); 32k-cell `extend_range` chunks with inter-chunk yields bound burst bandwidth theft.
 
-## Distributed plan deltas (Phase-7, from 10/10 review)
+## Distributed plan deltas (Phase-7, from 10/10 review — HISTORICAL: all items below deferred per as-built delta A4; retained to show intent, not state)
 
 1. Covers, not cuts: `distrib/cover.rs` partitions by open subcomplexes (KaHyPar-minimized borders); ≥95% hyperedges interior (METHOD-019).
 2. No barriers: `distrib/schwarz.rs` runs local PCG <10µs and diffuses border residuals async; an `MPI_Allreduce` anywhere fails the gate (METHOD-020).
@@ -123,7 +124,9 @@ A6. `index/` holds only mod.rs (stub). TIFI (FILE-020) implemented as `bcsf/name
 4. No coordinator: `net/nerve.rs` routes local queries zero-hop and slices spanning queries on nerve edges (METHOD-022).
 5. No RPC on hot path: `net/rdma.rs` reads border arenas one-sided; 1.2µs gate is HW-qualified (RoCEv2 required, loopback proves protocol) — same host-qualification precedent as SPEC-007 (METHOD-023).
 
-## Documented DIP waivers (accepted deviations, Phase-7)
+## Documented DIP waivers (SUPERSEDED by as-built delta A4 — no cross-crate arrows exist; retained for history)
+
+- W-D3 (live): `sheaf-storage` crate declares `sheaf-kernel` in [dependencies], but only `src/bin/phase1_bench.rs` (harness) imports it (sorted-scan check); lib code under bcsf/lsp/index never does — enforced by tests/dip_audit.sh. Rationale: cargo has no per-bin dependencies; splitting the bench into its own crate for one import is churn without layer benefit.
 
 Strict inward-only import would force a new domain-trait layer for two arrows whose cross-layer coupling is inherent, not accidental. Both waived explicitly (FOLDER-014 `application+infrastructure` sets the precedent); the audit script enforces that every outward arrow has a matching entry here, so waivers cannot accumulate silently.
 

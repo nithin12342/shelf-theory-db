@@ -25,7 +25,10 @@ use sheaf_query::ir::validator::validate_program;
 use sheaf_query::syntax::ast::{EmitItem, Expr, Lit, Query, Stmt};
 use sheaf_query::syntax::parser::parse_program;
 use sheaf_storage::bcsf::builder::BcsfBuilder;
-use sheaf_engine::corpus::{eval_expr, lit_to_string, malformed_corpus, valid_corpus};
+
+#[path = "shared/corpus.rs"]
+mod corpus;
+use corpus::{eval_expr, lit_to_string, malformed_corpus, valid_corpus};
 
 const SCHEMA: &str = r#"
 DEFINE CELL TYPE Person (dim: 0, discrete: { id: u64, name: string, status: u8 }, continuous: Float32[4]);
