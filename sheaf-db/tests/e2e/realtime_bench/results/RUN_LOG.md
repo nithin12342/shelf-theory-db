@@ -42,6 +42,8 @@ Test 1: DuckDB wins (6.4 vs 7.9 ms) · Test 2: **sheaf-db wins 44× (fibers 3.2 
 ## Post-close: synthesis stages + full rematch sweep (2026-10-14)
 
 - Stages 1a (Arrow slab), 1b (FMA kernel: f32-drift bug caught/fixed; gather slower than scalar — negative result), 2 (graded WAL PASS), 3 (HW-CRC ring: 100ns inserts, 21× SQLite; CRC-32C vs ISO-HDLC layered finding), 4 (incidence fibers 3.2 ms, 44× DuckDB).
+- Re-run attempt under 34–43% box load (java/Antigravity/OpenCode): phase1 lookup, phase3 solve, phase4 parse timing gates FAILED together (functional gates all PASS) — host-qualified, retry when quiet. Non-timing suites (adv3/5, phase5) green in the same run.
 - Methodology correction (2nd): hoisting PROVEN only for SoA in-process loop (0.0/0.0/27.9ms); earlier ~30 ms scan numbers were stale-binary + loaded-box artifacts. Paired back-to-back: all layouts tie ~8 ms; Test 1 = DuckDB-wins-narrowly (~1.25×, genuine parity zone). Test 2 superseded by fibers (sheaf-db WINS 44×); process-level repetition adopted.
 - Full rematch sweep post-synthesis: phases 1,2,3+adv,4,5+adv,6+adv,7+adv ALL PASS; new-bench gates (arrow/ring/graded/wal/join/fiber/mt/graph) ALL PASS; workspace clippy `-D warnings` clean.
 - Second sweep after M1–M4 + corrections: phases 1,2,3+adv,4 (one transient-load FAIL→PASS on retry, worst 41µs quiet),5+adv,6+adv,7+adv ALL PASS; M3 contraction exact 7.6 ms; M4 negative recorded; math-upgrades M1 coord parity (~8 ms) + M2 colimit PASS.
+- Latest full re-run: phases 1,2,3+adv,5+adv,6+adv,7+adv + synthesis/new benches ALL GREEN; phase4 parse gate FAILED 4 consecutive attempts (55/55/102/66µs) under sustained 20–35% load — host-qualified (last green 21µs quiet; phase4 code untouched since); gate unchanged, retry when quiet.
