@@ -2,6 +2,7 @@
 pub mod arena;
 pub mod arrow_layout;
 pub mod builder;
+pub mod coord;
 pub mod cover;
 pub mod indices;
 pub mod name_lookup;

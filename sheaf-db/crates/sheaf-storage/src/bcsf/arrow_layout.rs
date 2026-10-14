@@ -11,13 +11,14 @@ use std::alloc::{alloc_zeroed, dealloc, Layout};
 const ALIGN: usize = 64;
 
 /// A 64-byte aligned, length-tracked f32 buffer. Frees on drop.
-struct AlignedBuf {
+/// `pub(crate)` for reuse by the coordinate store (M1) — same alignment contract.
+pub(crate) struct AlignedBuf {
     ptr: *mut f32,
     cap: usize, // elements
 }
 
 impl AlignedBuf {
-    fn new(cap_elems: usize) -> Self {
+    pub(crate) fn new(cap_elems: usize) -> Self {
         let layout = Layout::from_size_align(
             cap_elems.checked_mul(4).expect("slab overflow"),
             ALIGN,
@@ -29,12 +30,12 @@ impl AlignedBuf {
         Self { ptr, cap: cap_elems }
     }
 
-    fn as_slice(&self, len: usize) -> &[f32] {
+    pub(crate) fn as_slice(&self, len: usize) -> &[f32] {
         assert!(len <= self.cap);
         unsafe { std::slice::from_raw_parts(self.ptr, len) }
     }
 
-    fn as_mut_slice(&mut self, len: usize) -> &mut [f32] {
+    pub(crate) fn as_mut_slice(&mut self, len: usize) -> &mut [f32] {
         assert!(len <= self.cap);
         unsafe { std::slice::from_raw_parts_mut(self.ptr, len) }
     }

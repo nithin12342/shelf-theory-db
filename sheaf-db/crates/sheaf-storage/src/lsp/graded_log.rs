@@ -39,12 +39,13 @@ impl GradedWal {
         self.log(dim)?.append(payload)
     }
 
-    /// Seal dimension `dim`. Succeeds only if every dimension below `dim` is
-    /// already sealed (graded order); otherwise returns `Err` and the watermark
-    /// does not advance. Sealing re-seals idempotently.
+    /// Seal dimension `dim`. Succeeds only if every PRESENT dimension below
+    /// `dim` is already sealed (graded order); absent dims are vacuously
+    /// sealed (no cells → nothing to order). Otherwise returns `Err` and the
+    /// watermark does not advance. Sealing re-seals idempotently.
     pub fn seal(&mut self, dim: u8) -> std::io::Result<()> {
         for d in 0..dim {
-            if !self.sealed.get(&d).copied().unwrap_or(false) {
+            if self.logs.contains_key(&d) && !self.sealed.get(&d).copied().unwrap_or(false) {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!("cannot seal dim {} before dim {} (down-closure)", dim, d),
@@ -53,7 +54,13 @@ impl GradedWal {
         }
         self.log(dim)?.flush()?;
         self.sealed.insert(dim, true);
-        while self.sealed.get(&self.watermark).copied().unwrap_or(false) {
+        // Advance past sealed dims, skipping absent ones (vacuous); bounded
+        // by the max present dim so an empty tail cannot run away.
+        let max = self.logs.keys().max().copied().unwrap_or(0);
+        while self.watermark <= max
+            && (!self.logs.contains_key(&self.watermark)
+                || self.sealed.get(&self.watermark).copied().unwrap_or(false))
+        {
             self.watermark += 1;
         }
         Ok(())
