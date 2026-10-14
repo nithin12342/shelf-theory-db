@@ -63,7 +63,7 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | ~~index/tifi.rs~~ | ~~map attribute values to cells~~ | ~~scan full BCSF~~ |
 | ~~index/partition.rs~~ | ~~partition hypergraph NUMA domains~~ | ~~solve linear systems~~ |
 | simd/intersection.rs | intersect u64 slices via SIMD | know TQL syntax |
-| simd/mt_scan.rs | partitioned multi-threaded scan reduce (PLANNED P1) | allocate per scan |
+| simd/mt_scan.rs | partitioned multi-threaded scan reduce | allocate per scan |
 | simd/matvec.rs | multiply W times stalk vectors | touch discrete masks |
 | operators/coboundary.rs | compute delta residuals per cell | own solver iteration |
 | operators/laplacian.rs | assemble sparse sheaf Laplacian | parse queries |
