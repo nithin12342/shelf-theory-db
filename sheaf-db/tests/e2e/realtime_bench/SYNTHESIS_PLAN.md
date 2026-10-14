@@ -115,3 +115,11 @@ Design fix during Stage 3 integration: absent dims are vacuously sealed (a dim w
 
 ### Stage 4 â€” incidence fibers (DONE 2026-10-14, PASS)
 `fiber_join_bench`: pre-fold sorts lineitem runs + orders once (1.8 s, index-like, untimed); timed pure-streaming merge-walk 3.2â€“3.6 ms best-of-3 processes, totals exact (rel 4.39e-12, segs match join_bench). **Beats DuckDB 158 ms by 44Ã—, PG 3.04 s by 844Ã—.** Bugs caught en route: (1) monotonic-cursor merge requires both sides sorted by join key (3.1M vs 93.5B mismatch diagnosed + fixed); (2) binary-search variant correct but slow (640 ms) â†’ pure streaming won. Design validated: pre-fold once, stream forever; zero hashes, zero searches.
+
+### Bottleneck probe results (DONE 2026-10-14, ottleneck_probe + esults/bottleneck.json)
+Exhaustive mechanism isolation, all measured:
+- Bandwidth: single 4.2 GB/s memcpy (read+write traffic) = ~8.4 GB/s true read BW; 48 MB scan floor 5.7 ms. 2.8 ms needed 17 GB/s: REFUTED quantitatively. 4-thread barely scales (5.3 GB/s, controller saturated) — thread-count assumption REFUTED.
+- Bounds checks: manual 12.3 / zip 14.8 / unchecked 10.9 ms — all within noise; zip SLOWEST. Bounds-check hypothesis for the 30-vs-8 gap REFUTED (that was box load); iterator-is-faster also refuted.
+- fsync: 4 KB write+fsync p50 1,206,800 ns vs write-only 9,100 ns — fsync = 99.3% of durable cost. Neither SQLite (2.1 us) nor sheaf-db (6.9 us) fsyncs per op; our gap is the per-op header rewrite (seek+write+seek-back), batch mode already 130 ns.
+- Amdahl: encode ~0 ns, crc_sw 134 ns, crc_hw 25 ns per 33B frame — checksum ~2% of the 6.9 us op. HW-CRC saves 109 ns of 6900 (1.6%). 100 ns ring number is transport-only.
+Verdict: bandwidth floor CONFIRMED, fsync floor CONFIRMED (1.2 ms), Amdahl CONFIRMED; two hypotheses REFUTED.
