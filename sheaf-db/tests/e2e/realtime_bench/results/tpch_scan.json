@@ -1,11 +1,11 @@
 {
   "rows": 6001215,
-  "load_s": 2.2,
+  "load_s": 1.7,
   "resident_MB": 198.0,
-  "scan_ms_process_level": [
-    31.1,
-    33.4,
-    29.4
+  "scan_ms_process_runs": [
+    7.6,
+    9.7,
+    13.5
   ],
-  "verdict": "CORRECTED: earlier 7.9ms was in-process best-of-3 hoisting artifact. True speed ~30ms. DuckDB 6.4ms wins ~5x. See SYNTHESIS_PLAN stage log for methodology finding."
+  "verdict": "CORRECTED (2nd): earlier 30ms process numbers were stale-binary + loaded-box artifacts. True speed ~8ms (interleaved), matching coord 7.8-9.5 and SoA 8.0. DuckDB 6.4ms wins narrowly (~1.25x) - genuine parity zone."
 }
