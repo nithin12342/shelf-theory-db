@@ -58,9 +58,12 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | lsp/wal.rs | log mutations with CRC | execute queries |
 | lsp/snapshot.rs | isolate MVCC read snapshots | compact segments |
 | lsp/compactor.rs | merge MemComplex into BCSF | accept client traffic |
+| lsp/preagg.rs | maintain O(1) group accumulators (PLANNED P3) | serve ad-hoc aggregates |
+| lsp/epoch_wal.rs | epoch-validated append-only headers (PLANNED P4) | rewrite headers in place |
 | ~~index/tifi.rs~~ | ~~map attribute values to cells~~ | ~~scan full BCSF~~ |
 | ~~index/partition.rs~~ | ~~partition hypergraph NUMA domains~~ | ~~solve linear systems~~ |
 | simd/intersection.rs | intersect u64 slices via SIMD | know TQL syntax |
+| simd/mt_scan.rs | partitioned multi-threaded scan reduce (PLANNED P1) | allocate per scan |
 | simd/matvec.rs | multiply W times stalk vectors | touch discrete masks |
 | operators/coboundary.rs | compute delta residuals per cell | own solver iteration |
 | operators/laplacian.rs | assemble sparse sheaf Laplacian | parse queries |
@@ -132,3 +135,7 @@ Strict inward-only import would force a new domain-trait layer for two arrows wh
 
 - W-D1: `distrib/cover.rs` (FILE-049) → `index/partition.rs` (FILE-021). Rationale: cover construction consumes KaHyPar partition-map output types directly; interposing a domain trait would add a file to launder a genuine data dependency.
 - W-D2: `distrib/border.rs` (FILE-050) → `bcsf/reader.rs` (FILE-015). Rationale: border slices are views over reader snapshots; re-wrapping the reader in an application trait duplicates a zero-cost view for layer purity alone.
+
+## As-built deltas (continued)
+
+A7. Theoretical-maximum program (2026-10-14, planned, unbuilt): bottleneck-probe measurements (bandwidth ~8.4 GB/s read, fsync 1.2 ms, 4-thread scaling ~1.25x, checksum ~2% of ops) motivate FILE-060/061/062 (P1/P3/P4 builds). P2/P5/P6 modify existing files (name_lookup, partition) with no new FILE IDs. Traceability: REQ-030..035 / SPEC-030..035 / METHOD-024..029 (stubs). Predictions are stretch targets with hard-gate parity floors; see MAX_PERF_PLAN.md.

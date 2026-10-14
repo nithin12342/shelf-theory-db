@@ -33,6 +33,12 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-027 | Cohomology CRDT gluing, no 2PC | Dist-10/10 P3 | SPEC-027 |
 | REQ-028 | Cech nerve zero-hop routing | Dist-10/10 P4 | SPEC-028 |
 | REQ-029 | RDMA one-sided border reads | Dist-10/10 P5 | SPEC-029 |
+| REQ-030 | Multi-threaded partitioned scan aggregation | MaxPerf P1 | SPEC-030 |
+| REQ-031 | Incremental pre-aggregation at ingest (O(groups) queries) | MaxPerf P3 | SPEC-031 |
+| REQ-032 | Append-only WAL headers + group-commit durability | MaxPerf P4 | SPEC-032 |
+| REQ-033 | Validity-free nulls (sparse exception lists) | MaxPerf P2 | SPEC-033 |
+| REQ-034 | MPHF/branchless point index | MaxPerf P5 | SPEC-034 |
+| REQ-035 | Bitmask-compressed sparse adjacency fibers | MaxPerf P6 | SPEC-035 |
 
 ## SPEC details (acceptance = gate)
 
@@ -54,3 +60,9 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 - SPEC-027: concurrent border edits converge deterministically to the min-Dirichlet-energy section; interior deletes emit zero network messages; no 2PC locks/latches in trace. E2E: `tests/e2e/phase7_dist/`.
 - SPEC-028: 100-query nerve fixture: single-subcomplex queries route with zero coordinator hops; spanning queries slice on nerve edges with correctly merged sections. E2E: `tests/e2e/phase7_dist/`.
 - SPEC-029: one-sided border reads functionally correct over loopback transport; 1.2µs gate HW-qualified (RoCEv2 NIC required — dev laptop proves protocol only, same precedent as SPEC-007 host qualification). Head-to-head N=5 fraud check <35µs vs 45–120ms Spanner-class cited as HW-qualified target. E2E: `tests/e2e/phase7_dist/`.
+- SPEC-030: partitioned scan (2-4 threads, per-thread f64 accumulators, single reduction) over 6M-row slab; hard gate exactness + <= 8 ms parity; stretch <= 6.4 ms (beat DuckDB quiet). Process-level repetition only. E2E: new scan bench.
+- SPEC-031: per-segment accumulators updated O(1) at ingest via graded ordering; GROUP BY query reads O(#groups) rows; totals exact vs fiber baseline (93,574,920,897). Memory per (group x measure) reported.
+- SPEC-032: epoch-validated append-only WAL headers (no seek-back); durable single-op <= 2.1 us target class (SQLite parity), amortized group-commit ~100 ns; fsync-batch semantics documented (true sync = 1.2 ms floor, both sides).
+- SPEC-033: nulls as sparse exception lists (sorted ordinals), hot path branch-free; exactness vs bitmap baseline; validity-tax elimination measured (was ~10 ms/6M).
+- SPEC-034: MPHF (FKS-style) or branchless-cmoved binary search over sorted slices, index L2-resident; hard gate exactness + <= 10.5 ns parity; stretch ~3-5 ns.
+- SPEC-035: roaring-style runs for dense hot slices + bitsets for sparse adjacency; space win measured; speed neutral-to-positive vs flat fibers on traversal workload.
