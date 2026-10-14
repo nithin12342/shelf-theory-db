@@ -85,3 +85,24 @@ pub fn ghosts_cover_boundaries(reader: &BcsfReader, partition: &Partition) -> bo
     }
     true
 }
+
+/// MAX-PERF P6: ghost membership as a dense bitset over the global cell id
+/// space. O(1) branchless membership test vs linear scan of the ghost vec.
+/// Space: n_cells bits per domain (vs 16 B per ghost pair).
+pub fn ghost_bitmask(domain: &Domain, n_cells: usize) -> Vec<u64> {
+    let mut mask = vec![0u64; n_cells.div_ceil(64)];
+    for &(_, remote) in &domain.ghosts {
+        if remote < n_cells {
+            mask[remote / 64] |= 1u64 << (remote % 64);
+        }
+    }
+    mask
+}
+
+/// Branchless ghost test: 1 bit, no pointer chase.
+pub fn is_ghost(mask: &[u64], cell: usize) -> bool {
+    match mask.get(cell / 64) {
+        Some(w) => (w >> (cell % 64)) & 1 == 1,
+        None => false,
+    }
+}

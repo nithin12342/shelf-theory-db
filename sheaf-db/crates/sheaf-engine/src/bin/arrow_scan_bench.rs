@@ -111,4 +111,29 @@ fn main() {
         std::process::exit(1);
     }
     println!("STAGE-1A: PASS");
+
+    // P2 gate (exactness only, runs after all timings): null every 7th row,
+    // verify exception list + compacted dense sum matches the valid subset.
+    for r in (0..slab.len()).step_by(7) {
+        slab.set_null(r);
+    }
+    let exc = slab.null_exceptions();
+    let (dp, dq, kept) = slab.compact_valid(0, 1);
+    let mut acc = 0f64;
+    for (a, b) in dp.iter().zip(dq.iter()) {
+        acc += *a as f64 * (1.0 - *b as f64);
+    }
+    // Reference: the slab's own fused sum skips the same nulls, so exact
+    // agreement proves compaction preserves the sum; exc non-empty proves
+    // nulls actually existed (partition identity checked below).
+    let full = slab.fused_revenue_sum(0, 1);
+    let ok = exc.windows(2).all(|w| w[0] < w[1])
+        && kept + exc.len() == slab.len()
+        && !exc.is_empty()
+        && (acc - full).abs() < 1e-6;
+    println!("gate_p2_exceptions={} (nulls={}, kept={}, dense_sum={:.2})",
+        if ok { "PASS" } else { "FAIL" }, exc.len(), kept, acc);
+    if !ok {
+        std::process::exit(1);
+    }
 }

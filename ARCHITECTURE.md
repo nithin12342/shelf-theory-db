@@ -59,7 +59,7 @@ Each `tests/e2e/phaseN_<ctx>/` holds `fixtures/` (real inputs) + `expected/` (ar
 | lsp/snapshot.rs | isolate MVCC read snapshots | compact segments |
 | lsp/compactor.rs | merge MemComplex into BCSF | accept client traffic |
 | lsp/preagg.rs | maintain O(1) group accumulators | serve ad-hoc aggregates |
-| lsp/epoch_wal.rs | epoch-validated append-only headers (PLANNED P4) | rewrite headers in place |
+| lsp/epoch_wal.rs | epoch-validated append-only headers | rewrite headers in place |
 | ~~index/tifi.rs~~ | ~~map attribute values to cells~~ | ~~scan full BCSF~~ |
 | ~~index/partition.rs~~ | ~~partition hypergraph NUMA domains~~ | ~~solve linear systems~~ |
 | simd/intersection.rs | intersect u64 slices via SIMD | know TQL syntax |

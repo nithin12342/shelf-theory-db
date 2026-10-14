@@ -6,7 +6,7 @@
 // D5: No overlapping domain ownership.
 // D6: Domain byte budget respected.
 use sheaf_storage::bcsf::builder::BcsfBuilder;
-use sheaf_storage::bcsf::partition::{domains_fit_l3, ghosts_cover_boundaries, partition_reader};
+use sheaf_storage::bcsf::partition::{domains_fit_l3, ghost_bitmask, ghosts_cover_boundaries, is_ghost, partition_reader};
 use sheaf_storage::bcsf::reader::BcsfReader;
 
 fn main() {
@@ -80,6 +80,29 @@ fn main() {
     let d6 = domains_fit_l3(&p, 64 * 1024 * 1024);
     println!("D6_budget_respected={}", if d6 { "PASS" } else { "FAIL" });
     all_pass &= d6;
+
+    // D7 (MAX-PERF P6): ghost bitmask agrees with ghost vec on every
+    // boundary reference; bitset bytes << ghost-vec bytes.
+    let mut d7 = true;
+    let mut mask_bytes = 0usize;
+    let mut vec_bytes = 0usize;
+    for d in &p.domains {
+        let mask = ghost_bitmask(d, r.len());
+        mask_bytes += mask.len() * 8;
+        vec_bytes += d.ghosts.len() * 16;
+        for cell in d.cell_range.clone() {
+            for &b in r.boundary(cell) {
+                let b = b as usize;
+                let in_range = d.cell_range.contains(&b);
+                let via_vec = d.ghosts.iter().any(|&(_, remote)| remote == b);
+                if !in_range && via_vec != is_ghost(&mask, b) {
+                    d7 = false;
+                }
+            }
+        }
+    }
+    println!("D7_ghost_bitmask={} (mask {}B vs vec {}B)", if d7 { "PASS" } else { "FAIL" }, mask_bytes, vec_bytes);
+    all_pass &= d7;
 
     if !all_pass {
         std::process::exit(1);
