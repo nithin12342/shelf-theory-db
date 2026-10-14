@@ -49,26 +49,36 @@ ENGINES = {
     "sqlite": {"bench": "py sqlite_bench.py", "json": "sqlite.json"},
     "duckdb": {"bench": "py duckdb_bench.py", "json": "duckdb.json"},
     "redis": {"bench": "py redis_bench.py", "json": "redis.json",
-              "start": f'Start-Process "{REDIS_SRV}" "--dir D:\\bench\\data\\redis --maxmemory 4gb --maxmemory-policy noeviction --port 6379" -WindowStyle Hidden',
-              "port": 6379, "stop": "redis-server"},
+              "pexec": [r"D:\bench\apps\redis\redis-server.exe", "--dir", r"D:\bench\data\redis",
+                        "--maxmemory", "4gb", "--maxmemory-policy", "noeviction", "--port", "6379"],
+              "port": 6379, "wait": 30, "stop_im": "redis-server.exe"},
     "mongodb": {"bench": "py mongo_bench.py", "json": "mongodb.json",
-                "start": f'Start-Process "{MONGOD}" "--dbpath D:\\bench\\data\\mongo --port 27017 --bind_ip 127.0.0.1" -WindowStyle Hidden',
-                "port": 27017, "stop": "mongod"},
+                "pexec": [r"D:\bench\scoop\shims\mongod.exe", "--dbpath", r"D:\bench\data\mongo",
+                          "--port", "27017", "--bind_ip", "127.0.0.1"],
+                "port": 27017, "wait": 60, "stop_im": "mongod.exe"},
     "mariadb": {"bench": "py sql_bench.py mariadb", "json": "mariadb.json",
-                "start": f'Start-Process "{MARIADB}" "--datadir=D:\\bench\\data\\mariadb --port=3307 --innodb-buffer-pool-size=2G --console" -WindowStyle Hidden',
-                "port": 3307, "stop": "mysqld"},
+                "pexec": [r"D:\bench\scoop\apps\mariadb\current\bin\mysqld.exe",
+                          "--datadir=D:\\bench\\data\\mariadb", "--port=3307",
+                          "--innodb-buffer-pool-size=2G", "--console"],
+                "port": 3307, "wait": 60, "stop_im": "mysqld.exe"},
     "pg": {"bench": "py sql_bench.py pg", "json": "pg.json",
-           "start": f'Start-Process "{PGCTL}" \'-D "D:\\bench\\data\\pgsql" -o "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on" -l "D:\\bench\\data\\pgsql\\logfile" start\' -WindowStyle Hidden',
-           "port": 5433, "stop_pg": True},
+           "pexec": [r"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe", "-D", r"D:\bench\data\pgsql",
+                     "-o", "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on",
+                     "-l", r"D:\bench\data\pgsql\logfile", "start"],
+           "port": 5433, "wait": 60,
+           "stop_cmd": r'"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe" -D "D:\bench\data\pgsql" stop'},
     "neo4j": {"bench": "py neo4j_bench.py", "json": "neo4j.json",
-              "start": "docker start bench-neo4j", "port": 7687, "stop": None},
+              "start": "docker start bench-neo4j", "port": 7687, "wait": 150, "ready_wait": 75,
+              "stop_cmd": "docker stop bench-neo4j"},
     "scylladb": {"bench": "py scylla_bench.py", "json": "scylladb.json",
-                 "start": "docker start bench-scylla", "port": 9042, "stop": None},
+                 "start": "docker start bench-scylla", "port": 9042, "wait": 220, "ready_wait": 150,
+                 "stop_cmd": "docker stop bench-scylla"},
 }
 ORDER = ["sqlite", "duckdb", "redis", "mongodb", "mariadb", "pg", "neo4j", "scylladb"]
 
-SHELF_BINS = [("sheaf-engine", "tpch_scan_bench"), ("sheaf-engine", "fiber_join_bench"),
-              ("sheaf-engine", "graph_bench"), ("sheaf-engine", "mt_bench"),
+SHELF_BINS = [("sheaf-engine", "tpch_scan_bench"), ("sheaf-engine", "fused_scan_bench"),
+              ("sheaf-engine", "fiber_join_bench"), ("sheaf-engine", "graph_bench"),
+              ("sheaf-engine", "mt_bench"),
               ("sheaf-storage", "wal_insert_bench"), ("sheaf-engine", "epoch_wal_bench"),
               ("sheaf-engine", "real_load_bench")]
 
@@ -117,11 +127,23 @@ def main():
                 continue
             e = ENGINES[name]
             print(f"\n===== {name} =====")
-            if e.get("start"):
-                sh(f'powershell -c "{e["start"]}"')
-                if not wait_port(e["port"]):
-                    print(f"{name}: server failed to start, SKIP"); summary[name] = "SERVER-FAIL"; continue
-                started.append(name)
+            if e.get("pexec"):
+                subprocess.Popen(e["pexec"], cwd=HERE, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
+                                 creationflags=subprocess.DETACHED_PROCESS)
+                time.sleep(3)
+                ok = wait_port(e["port"], e.get("wait", 120))
+            elif e.get("start"):
+                sh(e["start"])
+                ok = wait_port(e["port"], e.get("wait", 120))
+                if ok and e.get("ready_wait"):
+                    print(f"{name}: port open, ready-wait {e['ready_wait']}s (DB recovery)")
+                    time.sleep(e["ready_wait"])
+            else:
+                ok = True
+            if not ok:
+                print(f"{name}: server failed to start, SKIP"); summary[name] = "SERVER-FAIL"; continue
+            started.append(name)
             prior = None
             jp = os.path.join(RES, e["json"])
             if os.path.exists(jp):
@@ -132,7 +154,8 @@ def main():
             r = sh(e["bench"])
             print((r.stdout or "")[-600:])
             if r.returncode != 0:
-                print(f"{name}: BENCH-FAIL"); summary[name] = "BENCH-FAIL"; continue
+                print(f"{name}: BENCH-FAIL\n{(r.stdout or '')[-800:]}\n{(r.stderr or '')[-400:]}")
+                summary[name] = "BENCH-FAIL"; continue
             try:
                 merged = merge_result(jp, prior)
                 json.dump(merged, open(jp, "w"), indent=2)
@@ -150,12 +173,10 @@ def main():
     if not a.keep_up:
         for name in started:
             e = ENGINES[name]
-            if e.get("stop"):
-                sh(f'powershell -c "Get-Process {e["stop"]} -ErrorAction SilentlyContinue | Stop-Process -Force"')
-            elif e.get("stop_pg"):
-                sh(f'powershell -c "$env:PATH=\'D:\\bench\\scoop\\shims;\'+$env:PATH; & \'{PGCTL}\' -D \'D:\\bench\\data\\pgsql\' stop"')
-            elif name in ("neo4j", "scylladb"):
-                sh(f"docker stop bench-{name}")
+            if e.get("stop_im"):
+                sh(f'taskkill /F /IM {e["stop_im"]} >nul 2>&1')
+            elif e.get("stop_cmd"):
+                sh(e["stop_cmd"])
         print("servers stopped (installs + data kept)")
     print("\n===== HEADLINES =====")
     for name in ORDER:
