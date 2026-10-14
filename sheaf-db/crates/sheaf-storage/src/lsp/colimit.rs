@@ -7,7 +7,6 @@
 // Frame format: [dim u8][id u64LE][nboun u32LE][(dim u8,id u64LE) x nboun]
 // [nstalk u32LE][stalk f32LE x nstalk][discrete 16B, zero-padded].
 use std::collections::HashMap;
-use std::path::Path;
 
 use super::graded_log::GradedWal;
 use crate::bcsf::builder::BcsfBuilder;
@@ -33,7 +32,10 @@ pub fn encode_cell(dim: u8, id: u64, boundary: &[(u8, u64)], stalk: &[f32], disc
     b
 }
 
-pub fn decode_cell(f: &[u8]) -> Option<(u8, u64, Vec<(u8, u64)>, Vec<f32>, [u8; 16])> {
+/// Decoded cell frame: (dim, id, boundary refs, stalk, discrete slab).
+pub type DecodedCell = (u8, u64, Vec<(u8, u64)>, Vec<f32>, [u8; 16]);
+
+pub fn decode_cell(f: &[u8]) -> Option<DecodedCell> {
     if f.len() < 13 {
         return None;
     }
@@ -76,7 +78,7 @@ pub fn project(g: &GradedWal) -> std::io::Result<BcsfReader> {
     let mut gid_of: HashMap<(u8, u64), usize> = HashMap::new();
     let mut gid = 0usize;
     // Pass 1: assign gids in graded replay order (dims ascend by BTreeMap).
-    let mut decoded: Vec<(u8, u64, Vec<(u8, u64)>, Vec<f32>, [u8; 16])> = Vec::new();
+    let mut decoded: Vec<DecodedCell> = Vec::new();
     for (dim, count) in &sealed {
         let _ = count;
         let path = g.dir_for(*dim);

@@ -15,7 +15,8 @@ fn main() {
     // Fixture: 3 customers (dim 0, stalk=[balance]) + 2 payments (dim 2,
     // stalk=[amount], boundary = 2 customer faces each).
     let customers: Vec<(u64, f32)> = vec![(101, 5000.0), (102, 300.0), (103, 9999.0)];
-    let payments: Vec<(u64, f32, Vec<(u8, u64)>)> = vec![
+    type Boundary = Vec<(u8, u64)>;
+    let payments: Vec<(u64, f32, Boundary)> = vec![
         (9001, 5000.0, vec![(0, 101), (0, 102)]),
         (9002, 9999.0, vec![(0, 102), (0, 103)]),
     ];
@@ -61,7 +62,7 @@ fn main() {
         gid.insert(*id, i);
         b2.push(0, Vec::new(), &db, &[*bal], &[]);
     }
-    for (id, amt, b) in &payments {
+    for (_id, amt, b) in &payments {
         let faces: Vec<u64> = b.iter().map(|(_, i)| gid[i] as u64).collect();
         b2.push(2, faces, &db, &[*amt], &[]);
     }
