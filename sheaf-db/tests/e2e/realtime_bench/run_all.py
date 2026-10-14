@@ -77,7 +77,8 @@ ENGINES = {
 ORDER = ["sqlite", "duckdb", "redis", "mongodb", "mariadb", "pg", "neo4j", "scylladb"]
 
 SHELF_BINS = [("sheaf-engine", "tpch_scan_bench"), ("sheaf-engine", "fused_scan_bench"),
-              ("sheaf-engine", "fiber_join_bench"), ("sheaf-engine", "graph_bench"),
+              ("sheaf-engine", "fiber_join_bench"), ("sheaf-engine", "fiber_snap_bench"),
+              ("sheaf-engine", "range_slice_bench"), ("sheaf-engine", "graph_bench"),
               ("sheaf-engine", "mt_bench"),
               ("sheaf-storage", "wal_insert_bench"), ("sheaf-engine", "epoch_wal_bench"),
               ("sheaf-engine", "real_load_bench")]

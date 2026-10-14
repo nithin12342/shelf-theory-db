@@ -88,6 +88,27 @@ impl NameIndex {
         let fid = self.fields.iter().position(|(n, _)| n == field)?;
         Some(&self.sorted_cells[fid])
     }
+
+    /// Interval slice: position-ranges (into `field_cells`) whose field value
+    /// lies in [lo, hi). Comparison is lexicographic on raw value bytes, so
+    /// ordered fields must use an order-preserving (big-endian) encoding —
+    /// the same memcomparable convention as real ordered indexes. (The
+    /// pre-existing sort and equality lookup are byte-wise; LE-encoded
+    /// numerics do NOT sort numerically, hence BE here.)
+    pub fn range(&self, field: &str, lo: u64, hi: u64) -> Vec<std::ops::Range<usize>> {
+        let fid = match self.fields.iter().position(|(n, _)| n == field) {
+            Some(f) => f,
+            None => return Vec::new(),
+        };
+        if lo >= hi {
+            return Vec::new();
+        }
+        let (lo_b, hi_b) = (lo.to_be_bytes(), hi.to_be_bytes());
+        let idx = &self.index[fid];
+        let s = idx.partition_point(|(v, _)| v.as_slice() < &lo_b[..]);
+        let e = idx.partition_point(|(v, _)| v.as_slice() < &hi_b[..]);
+        idx[s..e].iter().map(|(_, r)| r.clone()).collect()
+    }
 }
 
 /// Extract a u64 field value from a cell's discrete slab at the given offset.
