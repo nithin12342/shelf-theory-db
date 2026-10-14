@@ -1,34 +1,35 @@
 {
   "run1_first_install": {
-    "note": "first install",
-    "lookup4_indexed_ms": {
-      "p50": 79.6,
-      "rows": 200,
-      "n": 5
+    "mongo_version": "9.0.2",
+    "load_s": 3.8,
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
     },
     "lookup4_unindexed_ms": {
       "p50": 12058.4,
       "rows": 200,
       "n": 5
     },
-    "mixed_32t": {
-      "throughput": 2497.0,
-      "p50_us": 9470.0
-    }
-  },
-  "run2_reinstall": {
-    "note": "reinstall",
     "lookup4_indexed_ms": {
-      "p50": 72.9,
+      "p50": 79.6,
       "rows": 200,
       "n": 5
     },
     "mixed_32t": {
-      "throughput": 3218.0
+      "ops": 16000,
+      "wall_s": 6.4,
+      "throughput": 2497.0,
+      "p50_us": 9470.0,
+      "p99_us": 46769.6
     }
   },
-  "run3_kept_install": {
+  "run2_reinstall": {
     "mongo_version": "9.0.2",
+    "load_s": 4.1,
     "counts": {
       "customers": 100000,
       "orders": 100000,
@@ -38,22 +39,21 @@
     },
     "mixed_32t": {
       "ops": 16000,
-      "wall_s": 3.6,
-      "throughput": 4411.0,
-      "p50_us": 5954.9,
-      "p99_us": 20450.4
+      "wall_s": 5.0,
+      "throughput": 3218.0,
+      "p50_us": 8165.4,
+      "p99_us": 30169.3
     },
     "lookup4_unindexed_ms": {
-      "p50": 36.5,
+      "p50": 11508.7,
       "rows": 200,
       "n": 5
     },
     "lookup4_indexed_ms": {
-      "p50": 55.9,
+      "p50": 72.9,
       "rows": 200,
       "n": 5
-    },
-    "load_s": "see mongo_bench output (fresh reload)"
+    }
   },
-  "anomaly": "run3 unindexed 36.5ms vs run1 12.1s/run2 11.5s (300x gap, unexplained - warm cache insufficient as explanation; flagged for investigation). INDEXED numbers stable across all runs (79.6/72.9/55.9); verdict rests on indexed."
+  "note": "run2 indexed 72.9ms vs run1 79.6ms (consistent); mixed 3218 vs 2497 ops/s (box quieter). Both kept."
 }

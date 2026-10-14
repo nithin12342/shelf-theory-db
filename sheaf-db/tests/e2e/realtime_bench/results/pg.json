@@ -59,36 +59,5 @@
       "n": 10000
     }
   },
-  "note": "three runs: join stable 3.0-3.1s quiet, 8.5s loaded. All kept.",
-  "run3_kept_install": {
-    "engine": "pg",
-    "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
-    "counts": {
-      "customer": 150000,
-      "orders": 1500000,
-      "lineitem": 6001215,
-      "part": 200000,
-      "partsupp": 800000
-    },
-    "point_lookup_us": {
-      "p50": 93.7,
-      "p99": 1176.7,
-      "n": 20000
-    },
-    "join_ms": {
-      "p50": 3068.1,
-      "rows": 100,
-      "n": 3
-    },
-    "scan_agg_ms": {
-      "p50": 488.2,
-      "n": 5
-    },
-    "insert_us": {
-      "p50": 76.0,
-      "p99": 425.6,
-      "n": 10000
-    },
-    "note": "kept-install rematch, data kept (no reload)"
-  }
+  "note": "run2 ~3-4x slower across the board (concurrent downloads + background load); both kept per precedent"
 }

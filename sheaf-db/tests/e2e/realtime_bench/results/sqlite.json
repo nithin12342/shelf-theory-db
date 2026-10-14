@@ -58,36 +58,5 @@
       "n": 10000
     }
   },
-  "note": "run3 slowest (join 221s, box loaded mid-run) vs run2 quiet (61s). Three-run spread documents load sensitivity, not engine variance.",
-  "run3_kept_install": {
-    "counts": {
-      "customer": 150000,
-      "orders": 1500000,
-      "lineitem": 6001215,
-      "part": 200000,
-      "partsupp": 800000
-    },
-    "load_s": 1.96,
-    "point_lookup_us": {
-      "p50": 33.6,
-      "p99": 418.2,
-      "n": 20000
-    },
-    "join_ms": {
-      "p50": 221199.7,
-      "rows": 100,
-      "n": 1
-    },
-    "scan_agg_ms": {
-      "p50": 2926.5,
-      "avg": 38255.13848465686,
-      "n": 5
-    },
-    "insert_us": {
-      "p50": 5.5,
-      "p99": 23.6,
-      "n": 10000
-    },
-    "note": "kept-install rematch"
-  }
+  "note": "run2 quieter box wins throughout (point 10.6 vs 30.8us, join 61 vs 127s, scan 1.34 vs 2.6s). Both kept."
 }

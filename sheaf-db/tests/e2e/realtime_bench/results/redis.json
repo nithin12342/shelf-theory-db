@@ -31,22 +31,5 @@
       "n": 2000
     }
   },
-  "note": "run3 fastest (98/127us) on quiet box with containers stopped; run1 430/491, run2 517/524. Loopback latency tracks box quietness.",
-  "run3_kept_install": {
-    "redis_version": "5.0.14.1",
-    "load_s": 26.5,
-    "dbsize": 1000000,
-    "used_memory_mb": 121.0,
-    "point_lookup_us": {
-      "p50": 97.7,
-      "p99": 448.5,
-      "n": 20000
-    },
-    "lua_5key_us": {
-      "p50": 126.8,
-      "p99": 543.3,
-      "n": 2000
-    },
-    "note": "kept-install rematch (fresh reload, quiet box)"
-  }
+  "note": "run2 within 1.2x of run1 (box reasonably quiet); both kept per policy"
 }

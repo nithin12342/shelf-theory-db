@@ -67,35 +67,5 @@
       "n": 10000
     }
   },
-  "note": "run3 in loaded band (join 439, scan 15.4) vs run2 quiet (158/6.4). Three-run spread documents load sensitivity.",
-  "run3_kept_install": {
-    "counts": {
-      "customer": 150000,
-      "orders": 1500000,
-      "lineitem": 6001215,
-      "part": 200000,
-      "partsupp": 800000
-    },
-    "duckdb_version": "1.5.4",
-    "point_lookup_us": {
-      "p50": 3436.4,
-      "p99": 9005.1,
-      "n": 20000
-    },
-    "join_ms": {
-      "p50": 439.4,
-      "rows": 100,
-      "n": 3
-    },
-    "scan_agg_ms": {
-      "p50": 15.4,
-      "n": 5
-    },
-    "insert_us": {
-      "p50": 4607.9,
-      "p99": 7466.8,
-      "n": 10000
-    },
-    "note": "kept-install rematch (fresh reload)"
-  }
+  "note": "run2 quiet box much faster (join 158 vs 411ms, scan 6.4 vs 17.9ms). Test 1 verdict flips: DuckDB 6.4ms beats sheaf-db 7.9ms quiet \u2014 parity zone, honest rematch recorded."
 }
