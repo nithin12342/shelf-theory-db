@@ -40,8 +40,11 @@ def main():
         db.shipments.insert_many([{"_id": i, "order_id": i, "carrier": "ups" if i % 2 else "fedex", "zone": i % 9} for i in range(1, N + 1)], ordered=False)
         res["load_s"] = round(time.perf_counter() - a, 1)
         print(f"loaded in {res['load_s']}s")
-    db.payments.create_index([("order_id", ASCENDING)])
-    db.orders.create_index([("cust_id", ASCENDING)])
+    for coll, key in (("payments", "order_id"), ("orders", "cust_id"), ("shipments", "order_id")):
+        try:
+            db[coll].drop_index([(key, ASCENDING)])
+        except Exception:
+            pass
     counts = {c: db[c].estimated_document_count() for c in ["customers", "orders", "items", "payments", "shipments"]}
     assert all(v == N for v in counts.values()), counts
     res["counts"] = counts
@@ -62,7 +65,18 @@ def main():
         a = time.perf_counter_ns()
         rows = list(db.payments.aggregate(pipe))
         ts.append((time.perf_counter_ns() - a) / 1e6)
-    res["lookup4_ms"] = {"p50": round(pct(ts, 0.5), 1), "rows": len(rows), "n": len(ts)}
+    res["lookup4_unindexed_ms"] = {"p50": round(pct(ts, 0.5), 1), "rows": len(rows), "n": len(ts)}
+
+    # 5.1b: same pipeline with all lookup indexes present (truthful indexed pair).
+    db.payments.create_index([("order_id", ASCENDING)])
+    db.orders.create_index([("cust_id", ASCENDING)])
+    db.shipments.create_index([("order_id", ASCENDING)])
+    ts = []
+    for _ in range(5):
+        a = time.perf_counter_ns()
+        rows = list(db.payments.aggregate(pipe))
+        ts.append((time.perf_counter_ns() - a) / 1e6)
+    res["lookup4_indexed_ms"] = {"p50": round(pct(ts, 0.5), 1), "rows": len(rows), "n": len(ts)}
 
     # 5.2: mixed 50/50 read/write over 32 threads (laptop-scaled from 128; recorded)
     def worker(seed):

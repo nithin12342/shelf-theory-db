@@ -59,5 +59,98 @@
       "n": 10000
     }
   },
-  "note": "run2 slower across the board (join 1.8x, scan 1.9x, insert 5.8x) under background load; both kept per host-qualification precedent, never averaged"
+  "run3_kept_install": {
+    "engine": "mariadb",
+    "version": "13.0.2-MariaDB",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 268.1,
+      "p99": 1076.3,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 53329.0,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 2877.3,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 91.8,
+      "p99": 575.8,
+      "n": 10000
+    },
+    "note": "kept-install rematch, data kept (no reload)"
+  },
+  "run4_loaded": {
+    "engine": "mariadb",
+    "version": "13.0.2-MariaDB",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 329.3,
+      "p99": 3091.9,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 58939.5,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 3345.7,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 156.8,
+      "p99": 2476.4,
+      "n": 10000
+    },
+    "note": "run4 data-kept rerun. Slowest join/scan of all runs - box loaded."
+  },
+  "note": "5 runs; latest run5_20261014.",
+  "run5_20261014": {
+    "engine": "mariadb",
+    "version": "13.0.2-MariaDB",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 768.0,
+      "p99": 2808.2,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 26580.2,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 1504.5,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 70.4,
+      "p99": 150.9,
+      "n": 10000
+    },
+    "note": "runner 2026-10-14 16:07 UTC+05:30"
+  }
 }

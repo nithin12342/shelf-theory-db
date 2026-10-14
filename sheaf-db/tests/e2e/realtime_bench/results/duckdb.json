@@ -67,5 +67,95 @@
       "n": 10000
     }
   },
-  "note": "run2 quiet box much faster (join 158 vs 411ms, scan 6.4 vs 17.9ms). Test 1 verdict flips: DuckDB 6.4ms beats sheaf-db 7.9ms quiet \u2014 parity zone, honest rematch recorded."
+  "run3_loaded_band": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 3436.4,
+      "p99": 9005.1,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 439.4,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 15.4,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 4607.9,
+      "p99": 7466.8,
+      "n": 10000
+    },
+    "note": "loaded-band (join 439 vs 158 quiet). Kept as loaded pair."
+  },
+  "run4_fresh": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 2023.4,
+      "p99": 4982.7,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 188.8,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 9.7,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2133.9,
+      "p99": 6629.5,
+      "n": 10000
+    },
+    "note": "run4 fresh reload (DB deleted first). Confirms quiet band within 20-80%."
+  },
+  "note": "5 runs; latest run5_20261014.",
+  "run5_20261014": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 1555.8,
+      "p99": 5127.3,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 238.8,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 8.0,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2908.1,
+      "p99": 6251.4,
+      "n": 10000
+    },
+    "note": "runner 2026-10-14 16:01 UTC+05:30"
+  }
 }

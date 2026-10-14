@@ -1,5 +1,5 @@
 {
-  "run1_quiet_box": {
+  "run1_quiet_box_MISLABELED": {
     "redis_version": "5.0.14.1",
     "load_s": 48.1,
     "dbsize": 1000000,
@@ -31,5 +31,56 @@
       "n": 2000
     }
   },
-  "note": "run2 within 1.2x of run1 (box reasonably quiet); both kept per policy"
+  "run3_kept_install": {
+    "redis_version": "5.0.14.1",
+    "load_s": 26.5,
+    "dbsize": 1000000,
+    "used_memory_mb": 121.0,
+    "point_lookup_us": {
+      "p50": 97.7,
+      "p99": 448.5,
+      "n": 20000
+    },
+    "lua_5key_us": {
+      "p50": 126.8,
+      "p99": 543.3,
+      "n": 2000
+    },
+    "note": "VALIDATED by run4: true quiet number ~95us. run1 quiet_box label was wrong (box loaded)."
+  },
+  "run4_rerun": {
+    "redis_version": "5.0.14.1",
+    "load_s": 25.4,
+    "dbsize": 1000000,
+    "used_memory_mb": 121.0,
+    "point_lookup_us": {
+      "p50": 92.3,
+      "p99": 418.5,
+      "n": 20000
+    },
+    "lua_5key_us": {
+      "p50": 134.3,
+      "p99": 548.8,
+      "n": 2000
+    },
+    "note": "run4 rerun, same harness+flags. Reproduces run3 (92 vs 98us)."
+  },
+  "note": "5 runs; latest run5_20261014.",
+  "run5_20261014": {
+    "redis_version": "5.0.14.1",
+    "load_s": 27.3,
+    "dbsize": 1000000,
+    "used_memory_mb": 121.0,
+    "point_lookup_us": {
+      "p50": 177.9,
+      "p99": 620.3,
+      "n": 20000
+    },
+    "lua_5key_us": {
+      "p50": 270.1,
+      "p99": 834.4,
+      "n": 2000
+    },
+    "note": "runner 2026-10-14 16:02 UTC+05:30"
+  }
 }

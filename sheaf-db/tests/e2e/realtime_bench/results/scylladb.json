@@ -46,5 +46,49 @@
       "n": 2001
     }
   },
-  "note": "remarkably consistent: point 11.7-15.7ms band both runs; uncompacted-fresh-load caveat stands. Both kept."
+  "run3_kept_install": {
+    "scylla_version": "3.0.8",
+    "load_s": 164.8,
+    "counts": {
+      "kv": 500000
+    },
+    "point_lookup_us": {
+      "p50": 15937.8,
+      "p99": 17248.0,
+      "n": 5000
+    },
+    "range_slice_ms": {
+      "ms": 91.0,
+      "rows": 10000
+    },
+    "flood_read_us": {
+      "p50": 2484.5,
+      "p99": 17138.4,
+      "n": 2001
+    },
+    "note": "kept-install rematch"
+  },
+  "run4_readywait": {
+    "scylla_version": "3.0.8",
+    "load_s": 150.0,
+    "counts": {
+      "kv": 500000
+    },
+    "point_lookup_us": {
+      "p50": 15570.2,
+      "p99": 18788.5,
+      "n": 5000
+    },
+    "range_slice_ms": {
+      "ms": 77.0,
+      "rows": 10000
+    },
+    "flood_read_us": {
+      "p50": 841.1,
+      "p99": 8239.0,
+      "n": 2001
+    },
+    "note": "run4 retry with 150s ready-wait. Flood back in quiet band."
+  },
+  "note": "point band 11.7/15.7/15.9/15.6ms x4. flood 0.83/0.80/2.48/0.84ms."
 }

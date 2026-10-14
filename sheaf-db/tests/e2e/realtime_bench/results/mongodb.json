@@ -55,5 +55,90 @@
       "n": 5
     }
   },
-  "note": "run2 indexed 72.9ms vs run1 79.6ms (consistent); mixed 3218 vs 2497 ops/s (box quieter). Both kept."
+  "run3_kept_install_INVALID": {
+    "mongo_version": "9.0.2",
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
+    },
+    "mixed_32t": {
+      "ops": 16000,
+      "wall_s": 3.6,
+      "throughput": 4411.0,
+      "p50_us": 5954.9,
+      "p99_us": 20450.4
+    },
+    "lookup4_unindexed_ms": {
+      "p50": 36.5,
+      "rows": 200,
+      "n": 5
+    },
+    "lookup4_indexed_ms": {
+      "p50": 55.9,
+      "rows": 200,
+      "n": 5
+    },
+    "load_s": "see mongo_bench output (fresh reload)",
+    "note": "INVALID: stale-index artifact (fully-indexed 36.5ms mislabeled unindexed). Kept for forensics."
+  },
+  "run4_fixed_harness": {
+    "mongo_version": "9.0.2",
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
+    },
+    "lookup4_unindexed_ms": {
+      "p50": 26010.8,
+      "rows": 200,
+      "n": 5
+    },
+    "lookup4_indexed_ms": {
+      "p50": 66.9,
+      "rows": 200,
+      "n": 5
+    },
+    "mixed_32t": {
+      "ops": 16000,
+      "wall_s": 9.9,
+      "throughput": 1617.0,
+      "p50_us": 16145.2,
+      "p99_us": 61952.1
+    },
+    "note": "run4 fixed harness (index-drop before unindexed; truthful pair). load_s absent = data kept, no reload."
+  },
+  "note": "5 runs; latest run5_20261014.",
+  "run5_20261014": {
+    "mongo_version": "9.0.2",
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
+    },
+    "lookup4_unindexed_ms": {
+      "p50": 31316.2,
+      "rows": 200,
+      "n": 5
+    },
+    "lookup4_indexed_ms": {
+      "p50": 109.0,
+      "rows": 200,
+      "n": 5
+    },
+    "mixed_32t": {
+      "ops": 16000,
+      "wall_s": 15.6,
+      "throughput": 1023.0,
+      "p50_us": 24476.8,
+      "p99_us": 108508.9
+    },
+    "note": "runner 2026-10-14 16:05 UTC+05:30"
+  }
 }
