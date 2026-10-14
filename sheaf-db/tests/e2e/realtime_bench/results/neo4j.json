@@ -23,20 +23,13 @@
     }
   },
   "run2_cold_cache": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
+    "note": "cold cache + concurrent pull",
     "point_lookup_us": {
       "p50": 5159.7,
-      "p99": 14033.8,
       "n": 5000
     },
     "two_hop_us": {
       "p50": 4676.2,
-      "p99": 13891.3,
       "n": 200
     },
     "full_traversal_ms": {
@@ -45,5 +38,28 @@
       "n": 3
     }
   },
-  "note": "run2 cold page cache + concurrent image pull; traversal 1000 vs 878ms. Both kept."
+  "run3_kept_install": {
+    "neo4j_version": "5.26.32",
+    "counts": {
+      "customers": 150000,
+      "orders": 1500000,
+      "lines": 600000
+    },
+    "point_lookup_us": {
+      "p50": 2639.3,
+      "p99": 9286.9,
+      "n": 5000
+    },
+    "two_hop_us": {
+      "p50": 4228.8,
+      "p99": 13655.7,
+      "n": 200
+    },
+    "full_traversal_ms": {
+      "p50": 868.6,
+      "paths": 600000,
+      "n": 3
+    }
+  },
+  "note": "three runs tightly banded on traversal (868-1000ms); point lookups 2.6-5.2ms. All kept."
 }

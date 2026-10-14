@@ -46,5 +46,27 @@
       "n": 2001
     }
   },
-  "note": "remarkably consistent: point 11.7-15.7ms band both runs; uncompacted-fresh-load caveat stands. Both kept."
+  "note": "point band 11.7-15.9ms across runs (consistent); flood reads vary with load (0.8-2.5ms). Uncompacted-fresh-load caveat stands.",
+  "run3_kept_install": {
+    "scylla_version": "3.0.8",
+    "load_s": 164.8,
+    "counts": {
+      "kv": 500000
+    },
+    "point_lookup_us": {
+      "p50": 15937.8,
+      "p99": 17248.0,
+      "n": 5000
+    },
+    "range_slice_ms": {
+      "ms": 91.0,
+      "rows": 10000
+    },
+    "flood_read_us": {
+      "p50": 2484.5,
+      "p99": 17138.4,
+      "n": 2001
+    },
+    "note": "kept-install rematch"
+  }
 }

@@ -59,5 +59,51 @@
       "n": 10000
     }
   },
-  "note": "run2 slower across the board (join 1.8x, scan 1.9x, insert 5.8x) under background load; both kept per host-qualification precedent, never averaged"
+  "note": "three runs banded (join 29.8/52.9/53.3s). All kept.",
+  "run3_kept_install": {
+    "run1_quiet_box": {
+      "point_us": 214.0,
+      "join_ms": 29812.2,
+      "scan_ms": 1521.3,
+      "insert_us": 68.1
+    },
+    "run2_loaded_box": {
+      "point_us": 206.8,
+      "join_ms": 52887.6,
+      "scan_ms": 2815.3,
+      "insert_us": 392.9
+    },
+    "run3_kept_install": {
+      "engine": "mariadb",
+      "version": "13.0.2-MariaDB",
+      "counts": {
+        "customer": 150000,
+        "orders": 1500000,
+        "lineitem": 6001215,
+        "part": 200000,
+        "partsupp": 800000
+      },
+      "point_lookup_us": {
+        "p50": 268.1,
+        "p99": 1076.3,
+        "n": 20000
+      },
+      "join_ms": {
+        "p50": 53329.0,
+        "rows": 100,
+        "n": 3
+      },
+      "scan_agg_ms": {
+        "p50": 2877.3,
+        "n": 5
+      },
+      "insert_us": {
+        "p50": 91.8,
+        "p99": 575.8,
+        "n": 10000
+      },
+      "note": "kept-install rematch, data kept (no reload)"
+    },
+    "note": "kept-install rematch, data kept (no reload)"
+  }
 }
