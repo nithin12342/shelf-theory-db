@@ -71,6 +71,11 @@ impl GradedWal {
         self.watermark
     }
 
+    /// Filesystem path of a dimension's log (for colimit projection).
+    pub fn dir_for(&self, dim: u8) -> PathBuf {
+        self.dir.join(format!("dim{}.wal", dim))
+    }
+
     /// Replay every sealed dimension in graded order. Returns per-dim counts.
     pub fn replay_sealed(&self) -> std::io::Result<Vec<(u8, usize)>> {
         let mut out = Vec::new();
