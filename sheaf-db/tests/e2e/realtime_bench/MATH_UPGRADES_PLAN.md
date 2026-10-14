@@ -46,3 +46,17 @@
 ## Build order
 
 M1 → M2 → M3 → M4 (read paths, then write path + compaction, then joins, then solvers; M4 independent and could parallelize, kept sequential for clean bisection). After all four: full rematch (Tests 1–5 + R1–R3 proposal) and quiet+loaded pairs per standing discipline. Predictions above are targets, not results.
+
+## Stage log
+
+### M1 — coordinate vectors (DONE, PASS hard gate)
+`bcsf/coord.rs` + `coord_scan_bench`: 64B-aligned, sum exact, ~8 ms process-level (parity with all layouts). 2.5 ms stretch REFUTED (bandwidth floor).
+
+### M2 — lazy colimit (DONE, PASS all gates)
+`lsp/colimit.rs` + `colimit_bench`: ordered seal, validate, boundary parity 14999==14999, frame roundtrip. Vacuous-absent-dim rule added during Stage 3 integration.
+
+### M3 — exterior contraction (DONE, mixed)
+`operators/contraction.rs` (masked + grouped kernels) + `contract_join_bench`: totals exact (rel 4.39e-12), 7.6 ms single-rep. Hard gate (≤ 3.2 ms fibers) MISSED — per-row indexed scatter costs ~2.4× vs per-customer dense accumulation (real finding). Still beats DuckDB 158 ms (21×) and PG 3.04 s (400×). Sub-ms stretch REFUTED on this hardware. Fibers (Stage 4 legacy result, 3.2 ms) remain the fastest join path.
+
+### M4 — Hodge preconditioning (DONE, NEGATIVE)
+`solvers/hodge.rs` (damped Jacobi start, ω param) + `hodge_bench` (hub fixture: 2000-face hyperedge + local edges). Formulations tried: (1) alternating near-harmonic start → undamped ω=1.0 DIVERGED (E=1272 vs 7e-4); damped ω=0.25 still hurt (E=45.7) — block-diagonal M mismatches hub coupling and damages an already-good start. (2) random-noise start → plain 8 iters / E=0.0164 vs hodge 8 iters / E=0.0165: IDENTICAL, no effect. Neither reaches E ≤ 1e-4 (regularized solution sits at E≈0.016 — gate target unreachable on this fixture regardless of start). Verdict: smoother is dead weight everywhere tested; BJ-PCG alone does the job. Code kept as documented experimental negative (correct, tested, clippy-clean), not wired into any solve path.
