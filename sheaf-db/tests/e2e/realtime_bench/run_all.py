@@ -65,7 +65,7 @@ ENGINES = {
            "pexec": [r"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe", "-D", r"D:\bench\data\pgsql",
                      "-o", "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on",
                      "-l", r"D:\bench\data\pgsql\logfile", "start"],
-           "port": 5433, "wait": 60,
+           "port": 5433, "wait": 60, "ready_wait": 20,
            "stop_cmd": r'"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe" -D "D:\bench\data\pgsql" stop'},
     "neo4j": {"bench": "py neo4j_bench.py", "json": "neo4j.json",
               "start": "docker start bench-neo4j", "port": 7687, "wait": 150, "ready_wait": 75,
@@ -107,6 +107,11 @@ def merge_result(path, prior):
     return new
 
 
+def docker_ok():
+    r = sh("docker info", timeout=60)
+    return r.returncode == 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engines", default=",".join(ORDER))
@@ -123,12 +128,17 @@ def main():
                 print(f"fresh: deleted {f}")
     summary = {}
     started = []
+    have_docker = docker_ok() if not a.shelf_only else True
+    if not a.shelf_only and not have_docker:
+        print("PREFLIGHT: docker daemon down — neo4j/scylladb will SKIP (no fake numbers)")
     if not a.shelf_only:
         for name in ORDER:
             if name not in want:
                 continue
             e = ENGINES[name]
             print(f"\n===== {name} =====")
+            if name in ("neo4j", "scylladb") and not have_docker:
+                print(f"{name}: SKIP (docker daemon down)"); summary[name] = "SKIP-NO-DOCKER"; continue
             if e.get("pexec"):
                 subprocess.Popen(e["pexec"], cwd=HERE, stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL,
