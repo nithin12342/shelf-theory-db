@@ -6,38 +6,67 @@
 use super::coboundary::{CoboundaryOp, MAX_D};
 use crate::simd::matvec::{matvec, matvec_transpose};
 
+/// Fingerprint for cached block-Jacobi factors.
+type BjKey = (u32, usize, usize, usize, u32);
+
 pub struct SheafLaplacian {
     pub n: usize,
     pub d: usize,
     pub ops: Vec<CoboundaryOp>,
     /// Per-cell Σ_τ M_τᵀM_τ blocks (flat n·d·d), unregularized.
     pub diag: Vec<f32>,
+    /// Per-op: morph is exactly diagonal → O(d) fast path in apply.
+    /// Exact-zero test only (no tolerance invention); recomputed by build().
+    pub diag_only: Vec<bool>,
+    /// Cached block-Jacobi factors + fingerprint (see block_jacobi_cached).
+    /// Key = (λ bits, n, d, ops len, Σdiag bits).
+    cached_bj: std::cell::RefCell<Option<(BjKey, Vec<f32>)>>,
 }
 
 impl SheafLaplacian {
     pub fn build(n: usize, d: usize, ops: Vec<CoboundaryOp>) -> Self {
         assert!(matches!(d, 1..=MAX_D));
         let mut diag = vec![0.0f32; n * d * d];
+        let mut mtm = [0.0f32; MAX_D * MAX_D];
+        let mut diag_only = Vec::with_capacity(ops.len());
         for op in &ops {
             assert_eq!(op.d, d, "mixed stalk dims in one Laplacian");
+            // MᵀM once per op (morph is per-op, not per-face): identical block
+            // is added into every face's diagonal — previously recomputed
+            // per face at O(d³) each.
+            for r in 0..d {
+                for c in 0..d {
+                    let mut s = 0.0f32;
+                    for k in 0..d {
+                        // NOTE (B7 precedent): mul_add(a,b,s) includes +s —
+                        // never write `s += a.mul_add(b,s)`.
+                        s = op.morph[k * d + r].mul_add(op.morph[k * d + c], s);
+                    }
+                    mtm[r * MAX_D + c] = s;
+                }
+            }
+            // Diagonal morph ⇒ MᵀM diagonal too, so the O(d) fast path in
+            // apply is exact. Exact-zero test only (no tolerance invented).
+            let mut morph_diag = true;
+            for r in 0..d {
+                for c in 0..d {
+                    if r != c && op.morph[r * d + c] != 0.0 {
+                        morph_diag = false;
+                    }
+                }
+            }
+            diag_only.push(morph_diag);
             for face in &op.faces {
                 assert!((*face as usize) < n, "face id outside 0-cell prefix");
                 let base = (*face as usize) * d * d;
-                // D_v += MᵀM. NOTE: mul_add(a,b,s) already includes +s —
-                // writing `s += a.mul_add(b,s)` double-accumulates (caught
-                // by B7: diagonal came out 8,4,2,1 instead of 1,1,1,1).
                 for r in 0..d {
                     for c in 0..d {
-                        let mut s = 0.0f32;
-                        for k in 0..d {
-                            s = op.morph[k * d + r].mul_add(op.morph[k * d + c], s);
-                        }
-                        diag[base + r * d + c] += s;
+                        diag[base + r * d + c] += mtm[r * MAX_D + c];
                     }
                 }
             }
         }
-        Self { n, d, ops, diag }
+        Self { n, d, ops, diag, diag_only, cached_bj: std::cell::RefCell::new(None) }
     }
 
     /// out = L·x (overwrite contract: zeroes out first, so solver loops
@@ -53,18 +82,39 @@ impl SheafLaplacian {
         for slot in out.iter_mut() {
             *slot = 0.0;
         }
-        for op in &self.ops {
-            Self::accumulate_op(self.d, op, x, out);
+        for (i, op) in self.ops.iter().enumerate() {
+            Self::accumulate_op(self.d, op, self.diag_only[i], x, out);
         }
     }
 
     /// One hypercell's δᵀδ contribution, added into out.
-    fn accumulate_op(d: usize, op: &CoboundaryOp, x: &[f32], out: &mut [f32]) {
+    /// Mᵀ·delta is loop-invariant (same morph + delta for every face):
+    /// computed once, sign-scaled per face — previously (|faces|-1) wasted
+    /// d×d matvecs per op per apply. Diagonal morphs take the O(d) path.
+    fn accumulate_op(d: usize, op: &CoboundaryOp, is_diag: bool, x: &[f32], out: &mut [f32]) {
         let mut proj = [0.0f32; MAX_D];
         let mut delta = [0.0f32; MAX_D];
         let mut back = [0.0f32; MAX_D];
         for slot in delta[..d].iter_mut() {
             *slot = 0.0;
+        }
+        if is_diag {
+            for (face, sign) in op.faces.iter().zip(op.signs.iter()) {
+                let base = (*face as usize) * d;
+                for i in 0..d {
+                    delta[i] += sign * op.morph[i * d + i] * x[base + i];
+                }
+            }
+            for i in 0..d {
+                back[i] = op.morph[i * d + i] * delta[i];
+            }
+            for (face, sign) in op.faces.iter().zip(op.signs.iter()) {
+                let base = (*face as usize) * d;
+                for i in 0..d {
+                    out[base + i] += sign * back[i];
+                }
+            }
+            return;
         }
         for (face, sign) in op.faces.iter().zip(op.signs.iter()) {
             let base = (*face as usize) * d;
@@ -73,9 +123,9 @@ impl SheafLaplacian {
                 *slot += sign * val;
             }
         }
+        matvec_transpose(&op.morph, &delta[..d], d, &mut back[..d]);
         for (face, sign) in op.faces.iter().zip(op.signs.iter()) {
             let base = (*face as usize) * d;
-            matvec_transpose(&op.morph, &delta[..d], d, &mut back[..d]);
             for (slot, val) in out[base..base + d].iter_mut().zip(back[..d].iter()) {
                 *slot += sign * val;
             }
@@ -93,14 +143,16 @@ impl SheafLaplacian {
         }
         let d = self.d;
         let out_len = out.len();
-        let chunks = self.ops.chunks((self.ops.len() + n_threads - 1) / n_threads.max(1));
+        let chunk = (self.ops.len() + n_threads - 1) / n_threads.max(1);
+        let op_chunks = self.ops.chunks(chunk);
+        let flag_chunks = self.diag_only.chunks(chunk);
         std::thread::scope(|s| {
             let mut handles = Vec::new();
-            for chunk in chunks {
+            for (chunk, flags) in op_chunks.zip(flag_chunks) {
                 handles.push(s.spawn(move || {
                     let mut local = vec![0.0f32; out_len];
-                    for op in chunk {
-                        Self::accumulate_op(d, op, x, &mut local);
+                    for (op, is_diag) in chunk.iter().zip(flags.iter()) {
+                        Self::accumulate_op(d, op, *is_diag, x, &mut local);
                     }
                     local
                 }));
@@ -147,6 +199,27 @@ impl SheafLaplacian {
             })
             .collect();
         (SheafLaplacian::build(c2g.len(), self.d, ops), g2c, c2g)
+    }
+    /// Cached twin of block_jacobi_inv: same factors, recomputed only when
+    /// the fingerprint changes. Key = (λ bits, n, d, ops len, Σdiag), all
+    /// bit/order-deterministic for unchanged data, so a hit is exact — never
+    /// a stale approximation. External mutation of the pub fields changes
+    /// Σdiag/ops-len and safely misses. RefCell keeps the &self API (zero
+    /// ripple into E2E callers); one borrow per solve, never per iteration.
+    pub fn block_jacobi_cached(&self, lambda: f32) -> Vec<f32> {
+        let mut sum = 0.0f32;
+        for &v in &self.diag {
+            sum += v;
+        }
+        let key = (lambda.to_bits(), self.n, self.d, self.ops.len(), sum.to_bits());
+        if let Some((k, factors)) = self.cached_bj.borrow().as_ref() {
+            if *k == key {
+                return factors.clone();
+            }
+        }
+        let factors = self.block_jacobi_inv(lambda);
+        *self.cached_bj.borrow_mut() = Some((key, factors.clone()));
+        factors
     }
     /// Block-Jacobi factors: per-cell inverse of (D_v + λI), flat n·d·d.
     /// Cholesky (D_v + λI is SPD by construction): half the flops of

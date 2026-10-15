@@ -44,7 +44,7 @@ pub fn regularized_solve_monitored(
     assert!(lambda > 0.0, "Tikhonov needs positive lambda");
     assert_eq!(x0.len(), lap.n * lap.d);
     assert_eq!(x.len(), lap.n * lap.d);
-    let bj = lap.block_jacobi_inv(lambda);
+    let bj = lap.block_jacobi_cached(lambda);
     let d = lap.d;
     let mut b = vec![0.0f32; x0.len()];
     for (dst, src) in b.iter_mut().zip(x0.iter()) {
