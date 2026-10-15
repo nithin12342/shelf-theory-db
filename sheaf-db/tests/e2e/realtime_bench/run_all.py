@@ -215,7 +215,7 @@ def main():
             continue
         try:
             d = json.load(open(os.path.join(RES, ENGINES[name]["json"])))
-            rk = sorted([k for k in d if k.startswith("run")])[-1]
+            rk = [k for k in d if k.startswith("run")][-1]
             cols = HEADLINES[ENGINES[name]["json"]]
             vals = {c: (d[rk].get(c, {}).get("p50", d[rk].get(c, {}).get("ms", d[rk].get(c)))) for c in cols}
             print(f"{name} [{rk}]: {vals}")
