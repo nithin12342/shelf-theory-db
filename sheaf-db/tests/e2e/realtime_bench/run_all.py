@@ -81,6 +81,7 @@ SHELF_BINS = [("sheaf-engine", "tpch_scan_bench"), ("sheaf-engine", "fused_scan_
               ("sheaf-engine", "range_slice_bench"), ("sheaf-engine", "graph_bench"),
               ("sheaf-engine", "mt_bench"),
               ("sheaf-storage", "wal_insert_bench"), ("sheaf-engine", "epoch_wal_bench"),
+              ("sheaf-engine", "p0_gates_bench"),
               ("sheaf-engine", "real_load_bench")]
 
 HEADLINES = {"sqlite.json": ("join_ms", "scan_agg_ms"), "duckdb.json": ("join_ms", "scan_agg_ms"),
