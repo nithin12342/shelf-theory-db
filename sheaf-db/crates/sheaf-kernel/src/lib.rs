@@ -3,3 +3,4 @@
 pub mod operators;
 pub mod simd;
 pub mod solvers;
+pub mod components;
