@@ -121,7 +121,7 @@
     },
     "note": "run4 data-kept rerun, mid-band (box moderately loaded)."
   },
-  "note": "6 runs; latest run6_20261015.",
+  "note": "run8 bests (join 1968, point 61.8, insert 52.9); run7 partial.",
   "run5_20261014": {
     "engine": "pg",
     "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
@@ -183,5 +183,48 @@
       "n": 10000
     },
     "note": "runner 2026-10-15 16:15 UTC+05:30"
+  },
+  "run7_20261015_PARTIAL": {
+    "join_ms": {
+      "p50": 2842.8,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 316.6,
+      "n": 5
+    },
+    "note": "PARTIAL: values from runner headline only; full record lost to harness overwrite (same clobber class, 3rd occurrence)."
+  },
+  "run8_20261015": {
+    "engine": "pg",
+    "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 61.8,
+      "p99": 571.8,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 1968.2,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 382.4,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 52.9,
+      "p99": 288.3,
+      "n": 10000
+    },
+    "note": "manual retry with pg_isready poll (fixed 20s wait proven wrong: recovery 10s this time, >20s last time)."
   }
 }

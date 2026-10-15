@@ -40,6 +40,23 @@ def wait_port(port, timeout=120):
     return False
 
 
+def wait_ready(e, name):
+    """Poll engine-level readiness (port-open is not ready). Returns True."""
+    if e.get("ready_poll"):
+        t0 = time.time()
+        while time.time() - t0 < e.get("wait", 120):
+            r = sh(e["ready_poll"], timeout=30)
+            if r.returncode == 0:
+                print(f"{name}: ready ({r.stdout.strip()[-60:]})")
+                return True
+            time.sleep(5)
+        return False
+    if e.get("ready_wait"):
+        print(f"{name}: port open, ready-wait {e['ready_wait']}s (DB recovery)")
+        time.sleep(e["ready_wait"])
+    return True
+
+
 def sh(cmd, timeout=3600):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True,
                           cwd=HERE, timeout=timeout)
@@ -65,7 +82,8 @@ ENGINES = {
            "pexec": [r"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe", "-D", r"D:\bench\data\pgsql",
                      "-o", "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on",
                      "-l", r"D:\bench\data\pgsql\logfile", "start"],
-           "port": 5433, "wait": 60, "ready_wait": 20,
+           "port": 5433, "wait": 180,
+           "ready_poll": r'"D:\bench\scoop\apps\postgresql\current\bin\pg_isready.exe" -h 127.0.0.1 -p 5433',
            "stop_cmd": r'"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe" -D "D:\bench\data\pgsql" stop'},
     "neo4j": {"bench": "py neo4j_bench.py", "json": "neo4j.json",
               "start": "docker start bench-neo4j", "port": 7687, "wait": 150, "ready_wait": 75,
@@ -145,15 +163,13 @@ def main():
                                  creationflags=subprocess.DETACHED_PROCESS)
                 time.sleep(3)
                 ok = wait_port(e["port"], e.get("wait", 120))
-                if ok and e.get("ready_wait"):
-                    print(f"{name}: port open, ready-wait {e['ready_wait']}s")
-                    time.sleep(e["ready_wait"])
+                if ok:
+                    ok = wait_ready(e, name)
             elif e.get("start"):
                 sh(e["start"])
                 ok = wait_port(e["port"], e.get("wait", 120))
-                if ok and e.get("ready_wait"):
-                    print(f"{name}: port open, ready-wait {e['ready_wait']}s (DB recovery)")
-                    time.sleep(e["ready_wait"])
+                if ok:
+                    ok = wait_ready(e, name)
             else:
                 ok = True
             if not ok:
