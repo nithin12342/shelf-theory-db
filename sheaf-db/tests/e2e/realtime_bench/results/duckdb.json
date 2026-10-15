@@ -127,7 +127,7 @@
     },
     "note": "run4 fresh reload (DB deleted first). Confirms quiet band within 20-80%."
   },
-  "note": "6 runs; latest run6_20261015.",
+  "note": "10 runs; latest run10_20261015.",
   "run5_20261014": {
     "counts": {
       "customer": 150000,
@@ -187,5 +187,125 @@
       "n": 10000
     },
     "note": "runner 2026-10-15 16:12 UTC+05:30"
+  },
+  "run7_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 1160.1,
+      "p99": 2780.6,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 195.4,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 10.6,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2762.9,
+      "p99": 4844.8,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 17:43 UTC+05:30"
+  },
+  "run8_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 650.4,
+      "p99": 1767.4,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 193.1,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 5.7,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 1916.9,
+      "p99": 5053.1,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:02 UTC+05:30"
+  },
+  "run9_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 660.7,
+      "p99": 1927.6,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 175.2,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 7.1,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2098.0,
+      "p99": 5123.8,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:25 UTC+05:30"
+  },
+  "run10_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 653.5,
+      "p99": 2410.9,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 161.4,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 4.6,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2183.0,
+      "p99": 4898.0,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:49 UTC+05:30"
   }
 }

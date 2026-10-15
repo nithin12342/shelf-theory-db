@@ -120,7 +120,7 @@
     },
     "note": "run4 fresh reload (DB deleted first). Box loaded: load 115s vs 40s priors."
   },
-  "note": "6 runs; latest run6_20261015.",
+  "note": "11 runs; latest run11_20261015.",
   "run5_20261014": {
     "counts": {
       "customer": 150000,
@@ -182,5 +182,160 @@
       "n": 10000
     },
     "note": "runner 2026-10-15 16:10 UTC+05:30"
+  },
+  "run7_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "load_s": 1.43,
+    "point_lookup_us": {
+      "p50": 15.5,
+      "p99": 376.9,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 119913.0,
+      "rows": 100,
+      "n": 1
+    },
+    "scan_agg_ms": {
+      "p50": 1379.1,
+      "avg": 38255.13848465686,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 2.8,
+      "p99": 16.6,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 17:42 UTC+05:30"
+  },
+  "run8_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "load_s": 1.88,
+    "point_lookup_us": {
+      "p50": 14.6,
+      "p99": 312.1,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 99463.2,
+      "rows": 100,
+      "n": 1
+    },
+    "scan_agg_ms": {
+      "p50": 982.0,
+      "avg": 38255.13848465686,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 1.7,
+      "p99": 6.0,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:02 UTC+05:30"
+  },
+  "run9_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "load_s": 0.84,
+    "point_lookup_us": {
+      "p50": 9.2,
+      "p99": 41.8,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 46796.0,
+      "rows": 100,
+      "n": 1
+    },
+    "scan_agg_ms": {
+      "p50": 987.0,
+      "avg": 38255.13848465686,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 1.5,
+      "p99": 5.8,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:16 UTC+05:30"
+  },
+  "run10_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "load_s": 0.83,
+    "point_lookup_us": {
+      "p50": 9.2,
+      "p99": 33.6,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 46577.7,
+      "rows": 100,
+      "n": 1
+    },
+    "scan_agg_ms": {
+      "p50": 1013.6,
+      "avg": 38255.13848465686,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 1.6,
+      "p99": 5.7,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:24 UTC+05:30"
+  },
+  "run11_20261015": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "load_s": 1.43,
+    "point_lookup_us": {
+      "p50": 13.6,
+      "p99": 294.2,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 93930.7,
+      "rows": 100,
+      "n": 1
+    },
+    "scan_agg_ms": {
+      "p50": 981.4,
+      "avg": 38255.13848465686,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 1.6,
+      "p99": 4.5,
+      "n": 10000
+    },
+    "note": "runner 2026-10-15 20:48 UTC+05:30"
   }
 }

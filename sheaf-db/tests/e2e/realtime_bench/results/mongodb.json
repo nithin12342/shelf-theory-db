@@ -112,7 +112,7 @@
     },
     "note": "run4 fixed harness (index-drop before unindexed; truthful pair). load_s absent = data kept, no reload."
   },
-  "note": "pair order correct 4 runs straight; indexed 26-109ms; unindexed 9-31s.",
+  "note": "9 runs; latest run9_20261015.",
   "run5_20261014": {
     "mongo_version": "9.0.2",
     "counts": {
@@ -196,5 +196,61 @@
       "p99_us": 68605.0
     },
     "note": "manual retry after runner BENCH-FAIL (mongod readiness). Correct pair."
+  },
+  "run8_20261015": {
+    "mongo_version": "9.0.2",
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
+    },
+    "lookup4_unindexed_ms": {
+      "p50": 6005.0,
+      "rows": 200,
+      "n": 5
+    },
+    "lookup4_indexed_ms": {
+      "p50": 64.3,
+      "rows": 200,
+      "n": 5
+    },
+    "mixed_32t": {
+      "ops": 16000,
+      "wall_s": 3.3,
+      "throughput": 4875.0,
+      "p50_us": 5455.0,
+      "p99_us": 18382.6
+    },
+    "note": "runner 2026-10-15 20:04 UTC+05:30"
+  },
+  "run9_20261015": {
+    "mongo_version": "9.0.2",
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
+    },
+    "lookup4_unindexed_ms": {
+      "p50": 11802.5,
+      "rows": 200,
+      "n": 5
+    },
+    "lookup4_indexed_ms": {
+      "p50": 62.0,
+      "rows": 200,
+      "n": 5
+    },
+    "mixed_32t": {
+      "ops": 16000,
+      "wall_s": 3.5,
+      "throughput": 4630.0,
+      "p50_us": 5744.7,
+      "p99_us": 19614.4
+    },
+    "note": "runner 2026-10-15 20:51 UTC+05:30"
   }
 }
