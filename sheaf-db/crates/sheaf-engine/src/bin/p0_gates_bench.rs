@@ -80,7 +80,74 @@ fn main() {
     let b0 = betti_zero(6, &faces);
     println!("p0_betti0: b0={} (expect 3)", b0);
     println!("gate_betti0={}", if b0 == 3 { "PASS" } else { "FAIL" });
-    if rel >= 1e-3 || after >= before || b0 != 3 {
+
+    // ---- Gate 4: d=8 stalk dim (max supported) applies correctly ----
+    // Identity morphs on a path: (Lx)_v = deg(v)·x_v − Σ_neigh x_u (per stalk
+    // coordinate). Verified against hand neighbor-differences.
+    let nd8 = 500usize;
+    let mut ops8 = Vec::new();
+    for i in 0..nd8 - 1 {
+        let mut morph = vec![0.0f32; 64];
+        for k in 0..8 {
+            morph[k * 8 + k] = 1.0;
+        }
+        ops8.push(CoboundaryOp::new(vec![i as u32, (i + 1) as u32], vec![1.0, -1.0], morph, 8));
+    }
+    let lap8 = SheafLaplacian::build(nd8, 8, ops8);
+    let x8: Vec<f32> = (0..nd8 * 8).map(|i| (i % 37) as f32 * 0.25).collect();
+    let mut y8 = vec![0.0f32; nd8 * 8];
+    lap8.apply_into(&x8, &mut y8);
+    let mut worst = 0.0f64;
+    for v in 0..nd8 {
+        let deg = (if v > 0 { 1 } else { 0 }) + (if v + 1 < nd8 { 1 } else { 0 });
+        for k in 0..8 {
+            let mut expect = deg as f32 * x8[v * 8 + k];
+            if v > 0 {
+                expect -= x8[(v - 1) * 8 + k];
+            }
+            if v + 1 < nd8 {
+                expect -= x8[(v + 1) * 8 + k];
+            }
+            worst = worst.max((y8[v * 8 + k] - expect).abs() as f64);
+        }
+    }
+    println!("p0_d8: worst_abs_err={:.2e} (expect < 1e-4)", worst);
+    println!("gate_d8={}", if worst < 1e-4 { "PASS" } else { "FAIL" });
+
+    // ---- Gate 5: giant hyperedge (2000 faces, one op) ----
+    // Constant field + zero-sum signs ⇒ δ = 0 ⇒ Lx = 0 exactly. Exercises
+    // the hoisted transpose path at scale (1 transpose, not 2000).
+    let ng = 2000usize;
+    let faces_g: Vec<u32> = (0..ng as u32).collect();
+    let signs_g: Vec<f32> = (0..ng).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+    let lap_g = SheafLaplacian::build(
+        ng, 2, vec![CoboundaryOp::new(faces_g, signs_g, vec![1.0, 0.0, 0.0, 1.0], 2)]);
+    let x_g = vec![3.5f32; ng * 2];
+    let mut y_g = vec![0.0f32; ng * 2];
+    let t0 = Instant::now();
+    lap_g.apply_into(&x_g, &mut y_g);
+    let giant_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let max_out: f32 = y_g.iter().map(|v| v.abs()).fold(0.0, f32::max);
+    println!("p0_giant: faces={} apply_ms={:.2} max_out={:.2e} (expect 0)", ng, giant_ms, max_out);
+    println!("gate_giant={}", if max_out < 1e-4 { "PASS" } else { "FAIL" });
+
+    // ---- Gate 6: ill-conditioned μ=1e-4 (κ ≈ 4e4) still converges ----
+    let mu_ill = 1e-4f32;
+    let mut x_ill = vec![0.0f32; N * D];
+    let res_ill = regularized_solve_monitored(
+        &lap, &x0, &mut x_ill, mu_ill, CgLimits { tol: 1e-6, max_iter: 3000 }, None, 1,
+    );
+    println!("p0_ill: mu={} iters={} rel={:.2e} (bound ~200+ iters at κ≈4e4)",
+        mu_ill, res_ill.iters, res_ill.rel_residual);
+    println!("gate_ill={}", if res_ill.rel_residual < 1e-3 { "PASS" } else { "FAIL" });
+
+    if rel >= 1e-3
+        || after >= before
+        || b0 != 3
+        || worst >= 1e-4
+        || max_out >= 1e-4
+        || res_ill.rel_residual >= 1e-3
+    {
         std::process::exit(1);
     }
     println!("P0-GATES: ALL PASS");
