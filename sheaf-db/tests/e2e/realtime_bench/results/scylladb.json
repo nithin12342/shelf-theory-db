@@ -90,5 +90,27 @@
     },
     "note": "run4 retry with 150s ready-wait. Flood back in quiet band."
   },
-  "note": "point band 11.7/15.7/15.9/15.6ms x4. flood 0.83/0.80/2.48/0.84ms."
+  "note": "5 runs; latest run5_20261015.",
+  "run5_20261015": {
+    "scylla_version": "3.0.8",
+    "load_s": 157.0,
+    "counts": {
+      "kv": 500000
+    },
+    "point_lookup_us": {
+      "p50": 15606.0,
+      "p99": 17154.3,
+      "n": 5000
+    },
+    "range_slice_ms": {
+      "ms": 56.7,
+      "rows": 10000
+    },
+    "flood_read_us": {
+      "p50": 713.9,
+      "p99": 1691.4,
+      "n": 2001
+    },
+    "note": "runner 2026-10-15 16:28 UTC+05:30"
+  }
 }

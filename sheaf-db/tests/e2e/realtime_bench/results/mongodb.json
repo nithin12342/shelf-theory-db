@@ -112,7 +112,7 @@
     },
     "note": "run4 fixed harness (index-drop before unindexed; truthful pair). load_s absent = data kept, no reload."
   },
-  "note": "5 runs; latest run5_20261014.",
+  "note": "6 runs; latest run6_20261015.",
   "run5_20261014": {
     "mongo_version": "9.0.2",
     "counts": {
@@ -140,5 +140,33 @@
       "p99_us": 108508.9
     },
     "note": "runner 2026-10-14 16:05 UTC+05:30"
+  },
+  "run6_20261015": {
+    "mongo_version": "9.0.2",
+    "counts": {
+      "customers": 100000,
+      "orders": 100000,
+      "items": 100000,
+      "payments": 100000,
+      "shipments": 100000
+    },
+    "lookup4_unindexed_ms": {
+      "p50": 9368.4,
+      "rows": 200,
+      "n": 5
+    },
+    "lookup4_indexed_ms": {
+      "p50": 26.3,
+      "rows": 200,
+      "n": 5
+    },
+    "mixed_32t": {
+      "ops": 16000,
+      "wall_s": 5.0,
+      "throughput": 3192.0,
+      "p50_us": 7867.6,
+      "p99_us": 35317.1
+    },
+    "note": "runner 2026-10-15 16:13 UTC+05:30"
   }
 }
