@@ -99,3 +99,17 @@ P2 (new capability)            : Union-find H₀ + clear/twist IF Betti added;
 DO NOT borrow                  : Dense eig, cubic persistence reduction,
                                  ST/KOSZ core (non-SDD blocks), full FEEC saddle
 ```
+
+## Implementation status (2026-10-15)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Hoist Mᵀδ, per-op MᵀM, diag fast path, M⁻¹ cache | DONE | `operators/laplacian.rs`, phase3+B7 green, iters=2 |
+| Chebyshev Tikhonov filter | DONE | `solvers/chebyshev.rs`, rel 8.8e-6 vs PCG |
+| H¹ curl/inconsistency proxy | DONE | `operators/energy.rs::inconsistency`, 20x drop gated |
+| b₀ union-find | DONE | `components.rs`, ==3 gated |
+| Lumped diagonal Hodge-⋆ | DONE (equivalent) | Mass already identity; diag-morph O(d) path added |
+| Scalar sparsifier for M⁻¹ | FOLDED into M⁻¹ cache | M⁻¹ already block-diagonal; rebuild was the cost |
+| Per-stalk QR | REJECTED | Replacing M by Q changes the sheaf — valid only for orthogonal-by-construction maps |
+| Tarski fallback | REJECTED | No lattice/order-valued stalks in this codebase (f32 linear) |
+| Morse coreduction | OPEN | Research-grade; unsafe to half-build (wrong collapse = silent wrong homology) |
