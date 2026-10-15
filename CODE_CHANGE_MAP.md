@@ -11,12 +11,10 @@
 | 5 | `6f4a466` | `run_all.py` (edit) | +3/−1 | SHELF_BINS+=snapshot+range bins | Local only |
 | 6 | `298edd8` | `tests/e2e/realtime_bench/mongo_bench.py` (edit) | +20/−5 | Truthful unindexed/indexed pair (index-drop fix) | Local only |
 | 6 | `298edd8` | `results/{8 engines}.json` + `RUN_SUMMARY_*.json` (edits) | +642/−12 | run4/run5 histories, repairs, retraction notes | Local only |
-| 7 | (this session) | `sheaf-kernel/.../operators/laplacian.rs` (edit) | hoist + scale + diag | Mᵀδ hoist, per-op MᵀM, diag fast path, M⁻¹ cache | Uncommitted |
-| 7 | (this session) | `sheaf-kernel/.../solvers/tikhonov.rs` (edit) | 1 line | Hot loop → cached M⁻¹ | Uncommitted |
-| 8 | (this session) | `sheaf-kernel/.../solvers/chebyshev.rs` (NEW) | ~110 | P0 Chebyshev Tikhonov filter | Uncommitted |
-| 8 | (this session) | `sheaf-kernel/src/components.rs` (NEW) | ~40 | b₀ union-find | Uncommitted |
-| 8 | (this session) | `sheaf-kernel/.../operators/energy.rs` (edit) | +9 | H¹-proxy inconsistency() | Uncommitted |
-| 8 | (this session) | `crates/sheaf-engine/src/bin/p0_gates_bench.rs` (NEW) | ~110 | P0 triple gate bin | Uncommitted |
+| 7 | `35d2173` + `019b0b4` | laplacian/tikhonov + `fused_scan_bench.rs` | hoist/scale/diag/cache + 4-way unroll (1.7 ms) | Committed |
+| 8 | `0d863b2` + `88fa66f` | chebyshev/components/energy/p0 + `fiber_snap_bench.rs` crc | P0 triple gate + snapshot crc framing | Committed |
+| 9 | `471741a` | `p0_gates_bench.rs` stress fixtures | d8 exact, giant 2000-face, ill-conditioned converge | Committed |
+| 10 | (docs) | `COMPLEXITY_ANALYSIS.md` (NEW) + map sync | 15 formulas vs wall, 10 probes, unroll update | Uncommitted |
 
 ## Uncommitted (working tree)
 
