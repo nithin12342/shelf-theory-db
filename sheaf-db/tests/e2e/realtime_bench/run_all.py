@@ -55,7 +55,7 @@ ENGINES = {
     "mongodb": {"bench": "py mongo_bench.py", "json": "mongodb.json",
                 "pexec": [r"D:\bench\scoop\shims\mongod.exe", "--dbpath", r"D:\bench\data\mongo",
                           "--port", "27017", "--bind_ip", "127.0.0.1"],
-                "port": 27017, "wait": 60, "stop_im": "mongod.exe"},
+                "port": 27017, "wait": 60, "ready_wait": 15, "stop_im": "mongod.exe"},
     "mariadb": {"bench": "py sql_bench.py mariadb", "json": "mariadb.json",
                 "pexec": [r"D:\bench\scoop\apps\mariadb\current\bin\mysqld.exe",
                           "--datadir=D:\\bench\\data\\mariadb", "--port=3307",
@@ -135,6 +135,9 @@ def main():
                                  creationflags=subprocess.DETACHED_PROCESS)
                 time.sleep(3)
                 ok = wait_port(e["port"], e.get("wait", 120))
+                if ok and e.get("ready_wait"):
+                    print(f"{name}: port open, ready-wait {e['ready_wait']}s")
+                    time.sleep(e["ready_wait"])
             elif e.get("start"):
                 sh(e["start"])
                 ok = wait_port(e["port"], e.get("wait", 120))
