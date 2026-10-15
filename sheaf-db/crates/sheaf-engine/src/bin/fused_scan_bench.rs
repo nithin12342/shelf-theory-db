@@ -65,12 +65,23 @@ fn main() {
     }
 
     // ---- Timed: contiguous f32 fused sum, 5 reps, best + median ----
+    // 4-way unrolled accumulators break the single-chain latency stall
+    // (COMPLEXITY_ANALYSIS §4: serial 6M×4cyc/4GHz ≈ 6ms; LLVM ~2-way gave
+    // 5.3ms; 4 explicit chains target the 2.86ms bandwidth floor).
     let mut reps = Vec::new();
     let mut sum = 0f64;
     for _ in 0..5 {
         let t0 = Instant::now();
-        let mut acc = 0f64;
-        for &v in fused.iter() {
+        let (mut a0, mut a1, mut a2, mut a3) = (0f64, 0f64, 0f64, 0f64);
+        let (chunks, rem) = fused.as_chunks::<4>();
+        for c in chunks {
+            a0 += c[0] as f64;
+            a1 += c[1] as f64;
+            a2 += c[2] as f64;
+            a3 += c[3] as f64;
+        }
+        let mut acc = (a0 + a1) + (a2 + a3);
+        for &v in rem {
             acc += v as f64;
         }
         std::hint::black_box(acc);
