@@ -121,7 +121,7 @@
     },
     "note": "run4 data-kept rerun. Slowest join/scan of all runs - box loaded."
   },
-  "note": "10 runs; latest run10_20261015.",
+  "note": "11 runs; latest run11_20261016.",
   "run5_20261014": {
     "engine": "mariadb",
     "version": "13.0.2-MariaDB",
@@ -307,5 +307,36 @@
       "n": 10000
     },
     "note": "runner 2026-10-15 20:53 UTC+05:30"
+  },
+  "run11_20261016": {
+    "engine": "mariadb",
+    "version": "13.0.2-MariaDB",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 127.1,
+      "p99": 582.7,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 87613.1,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 3620.0,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 236.7,
+      "p99": 2015.2,
+      "n": 10000
+    },
+    "note": "runner 2026-10-16 12:44 UTC+05:30"
   }
 }

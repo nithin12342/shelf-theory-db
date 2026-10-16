@@ -120,7 +120,7 @@
     },
     "note": "run4 fresh reload (DB deleted first). Box loaded: load 115s vs 40s priors."
   },
-  "note": "11 runs; latest run11_20261015.",
+  "note": "12 runs; latest run12_20261016.",
   "run5_20261014": {
     "counts": {
       "customer": 150000,
@@ -337,5 +337,36 @@
       "n": 10000
     },
     "note": "runner 2026-10-15 20:48 UTC+05:30"
+  },
+  "run12_20261016": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "load_s": 1.86,
+    "point_lookup_us": {
+      "p50": 14.4,
+      "p99": 308.8,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 112459.8,
+      "rows": 100,
+      "n": 1
+    },
+    "scan_agg_ms": {
+      "p50": 1166.5,
+      "avg": 38255.13848465686,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 1.8,
+      "p99": 6.8,
+      "n": 10000
+    },
+    "note": "runner 2026-10-16 12:37 UTC+05:30"
   }
 }
