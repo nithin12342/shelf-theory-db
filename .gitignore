@@ -17,3 +17,11 @@ Cargo.lock
 .idea/
 Thumbs.db
 Desktop.ini
+
+# Local datasets (GBs, never commit)
+data/
+*.tsv
+*.tsv.gz
+*.zip
+*.gz
+
