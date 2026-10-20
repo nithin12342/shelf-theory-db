@@ -39,6 +39,13 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-033 | Validity-free nulls (sparse exception lists) | MaxPerf P2 | SPEC-033 |
 | REQ-034 | MPHF/branchless point index | MaxPerf P5 | SPEC-034 |
 | REQ-035 | Bitmask-compressed sparse adjacency fibers | MaxPerf P6 | SPEC-035 |
+| REQ-036 | Fingerprint-bound fiber bundle cache (no rebuild on unchanged data) | FiberLifecycle N1-N2 | SPEC-036 |
+| REQ-037 | Fiber epoch stamp + stale detection with always-correct fallback | FiberLifecycle N3 | SPEC-037 |
+| REQ-038 | Per-domain incremental fiber maintenance under writes | FiberLifecycle N4 | SPEC-038 |
+| REQ-039 | Snapshot-consistent (frozen-epoch) fiber build | FiberLifecycle N5 | SPEC-039 |
+| REQ-040 | Concurrent read/write fiber correctness gate | FiberLifecycle N6 | SPEC-040 |
+| REQ-041 | Release-profile restructure under a 3-part no-regression bar | FiberLifecycle N7 | SPEC-041 |
+| REQ-042 | Complexity model covers the compile-time axis | FiberLifecycle N8 | SPEC-042 |
 
 ## SPEC details (acceptance = gate)
 
@@ -66,3 +73,11 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 - SPEC-033: nulls as sparse exception lists (sorted ordinals), hot path branch-free; exactness vs bitmap baseline; validity-tax elimination measured (was ~10 ms/6M).
 - SPEC-034: MPHF (FKS-style) or branchless-cmoved binary search over sorted slices, index L2-resident; hard gate exactness + <= 10.5 ns parity; stretch ~3-5 ns.
 - SPEC-035: roaring-style runs for dense hot slices + bitsets for sparse adjacency; space win measured; speed neutral-to-positive vs flat fibers on traversal workload.
+
+- SPEC-036: fiber bundle cache keyed by a fingerprint (dataset epoch + row counts + schema version + bundle kind). Same dataset twice => second bundle build <1 s (measured: IMDb Q2+Q3 bundle build is 178.96 s today); any fingerprint mismatch => MISS and full rebuild (never a stale hit). Cached bundle answers must equal cold-build answers exactly. E2E: `tests/e2e/fiber_lifecycle/` + `crates/sheaf-engine/src/bin/shared/fiber.rs`.
+- SPEC-037: every persisted fiber bundle carries the base compaction epoch it was built from; loading a bundle whose epoch != current epoch MUST fail loud (never answer) and the query falls back to the always-correct scan path. No epoch present => treated as unknown => fallback, never a wrong answer. E2E: same dir, with a stale-epoch fixture.
+- SPEC-038: a write dirties only the containing 64 MB L3 domain; incremental fiber update re-sorts only dirty domains and merges them. Gate: 1,000 writes => number of re-sorted domains == number of dirty domains; post-write aggregates equal a full rebuild on the same data. E2E: same dir.
+- SPEC-039: a fiber build reads a frozen epoch (LSM fencing: writes sealed later wait for the next merge) so a concurrent compaction cannot tear the build. Gate: build during concurrent compaction == build on a quiet box, byte-equal aggregates. E2E: same dir.
+- SPEC-040: concurrent read/write stress at volume. Gate: 10,000 mixed read/write ops where every fiber-backed answer equals the scan-fallback answer; no deadlock, no corruption; staleness lag bounded and reported (not median-only). E2E: `tests/e2e/fiber_lifecycle/`.
+- SPEC-041: release-profile restructure (thin-LTO + `codegen-units=16`) is allowed ONLY with all three of: (a) clean release build <=55 s from a fresh `CARGO_TARGET_DIR` (>=2x speedup over the measured 109.3 s), (b) bit-identical Phase-3 kernel results, (c) identical measured-query timings across all 11 `SHELF_BINS`. Any miss => node closes as `recorded` and the profile is untouched (LTO was a deliberate Phase-3 kernel choice).
+- SPEC-042: `COMPLEXITY_ANALYSIS.md` carries a compile-time axis row (clean release build 109.3 s; warm incremental 0.19 s; incremental-after-touch 0.8 s; release artifacts 0.05 GB) and closes out the A9 snapshot-checksum finding.
