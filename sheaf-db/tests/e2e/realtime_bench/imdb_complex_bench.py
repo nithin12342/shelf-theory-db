@@ -42,8 +42,15 @@ QUERIES = {
              JOIN name_basics n ON n.nconst = p.nconst
              WHERE p.category IN ('actor','actress') AND n.birthyear>=1970 AND r.averagerating>=8.0
              GROUP BY n.primaryname ORDER BY c DESC, n.primaryname ASC LIMIT 10""",
-    # Q3: 4-table decade rollup with HAVING (aggregation stress)
-    "q3": """SELECT (b.startyear/10)*10 AS decade, COUNT(*), AVG(r.averagerating) FROM title_basics b
+    # Q3: 4-table decade rollup with HAVING (aggregation stress).
+    # Dialect divergences found by the md5 gate (both real, both silent):
+    #  (1) DuckDB '/' is true division (1951.0) vs PostgreSQL integer division
+    #      (1950)        -> 59 decades in DuckDB vs 8 in PG.
+    #  (2) DuckDB CAST(double AS INTEGER) ROUNDS (195.5 -> 196) while the
+    #      integer path TRUNCATES (1955/10 -> 195) -> 9 decades vs 8.
+    # Dialect-neutral form: FLOOR on a float division, then cast.
+    # Join fan-out was identical in both engines (207,381 rows).
+    "q3": """SELECT CAST(FLOOR(b.startyear / 10.0) AS INTEGER) * 10 AS decade, COUNT(*), AVG(r.averagerating) FROM title_basics b
              JOIN title_ratings r ON r.tconst = b.tconst
              JOIN title_principals p ON p.tconst = b.tconst
              JOIN name_basics n ON n.nconst = p.nconst
@@ -97,16 +104,24 @@ def main():
         pg = psycopg.connect(**PG, autocommit=True)
         print("pg: created database imdb", flush=True)
     cur = pg.cursor()
+    # Load-time settings: bulk load must not be WAL-bound (observed:
+    # "checkpoints are occurring too frequently" + 107s checkpoint writes
+    # made the copy ~5x slower). UNLOGGED tables skip WAL entirely for
+    # the bulk load; documented as a load-time concession, not a
+    # steady-state one (queries run on the same tables afterwards).
+    cur.execute("SET synchronous_commit = off")
+    cur.execute("SET maintenance_work_mem = '1GB'")
+    cur.execute("SET work_mem = '256MB'")
     for t in TABLES:
         tbl = t.replace(".", "_")
-        cur.execute(f"CREATE TABLE IF NOT EXISTS {tbl} {DDL[tbl]}")
+        cur.execute(f"CREATE UNLOGGED TABLE IF NOT EXISTS {tbl} {DDL[tbl]}")
         cur.execute(f"SELECT COUNT(*) FROM {tbl}")
         if cur.fetchone()[0] == 0:
             f = os.path.join(IMDB, t + ".tsv")
             with open(f, "rb") as fh:
                 with cur.copy(f"COPY {tbl} FROM STDIN WITH (FORMAT csv, DELIMITER E'\\t', NULL '\\N', HEADER true, QUOTE E'\\b')") as cp:
                     while True:
-                        b = fh.read(1 << 20)
+                        b = fh.read(8 << 20)
                         if not b:
                             break
                         cp.write(b)
@@ -130,8 +145,28 @@ def main():
         assert len(drows) > 0, (qn, "empty result")
         res["queries"][qn] = {"rows": len(drows), "md5": dh,
                               "duckdb_ms": round(dms, 1), "pg_ms": round(pms, 1)}
+        if qn == "q1":
+            # expected values for the ShelfDB fiber counterpart (Rust bin)
+            res["queries"][qn]["expected_count"] = int(drows[0][0])
+            res["queries"][qn]["expected_avg_rating"] = float(drows[0][1])
+            res["queries"][qn]["expected_sum_votes"] = int(drows[0][2])
+            print(f"q1 expected: count={drows[0][0]} avg={drows[0][1]} votes={drows[0][2]}", flush=True)
+        if qn == "q3":
+            # expected rows for the ShelfDB fiber counterpart (decade, cnt, avg)
+            res["queries"][qn]["expected_rows"] = [
+                [int(r[0]), int(r[1]), float(r[2])] for r in drows]
+            # compact form for the Rust counterpart (one line, ';'-separated)
+            res["queries"][qn]["expected_rows_compact"] = ";".join(
+                f"{int(r[0])},{int(r[1])},{float(r[2]):.10f}" for r in drows)
+            print(f"q3 expected: {[(r[0], r[1]) for r in drows]}", flush=True)
         print(f"{qn}: rows={len(drows)} md5={dh[:12]} duck={dms:.0f}ms pg={pms:.0f}ms", flush=True)
     res["gate_cross_engine"] = "PASS"
+    res["dialect_note"] = ("Two silent dialect divergences found by the md5 cross-engine "
+                           "gate: (1) DuckDB '/' is true division vs PostgreSQL integer "
+                           "division (8 decades vs 59); (2) DuckDB CAST(double AS INT) "
+                           "rounds vs PostgreSQL truncation (8 vs 9). Fixed with "
+                           "CAST(FLOOR(startyear/10.0) AS INTEGER)*10. Join fan-out "
+                           "identical in both engines (207,381 rows).")
     json.dump(res, open(OUT, "w"), indent=2)
     print("SAVED", OUT)
 
