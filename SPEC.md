@@ -53,6 +53,13 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-047 | Shadow-paging compaction (reader chain, no full copy) | FiberLifecycle B5 | SPEC-047 |
 | REQ-048 | SoA as primary stalk layout (no read-time transpose copy) | FiberLifecycle B6 | SPEC-048 |
 | REQ-049 | SKELETON drift fix (FILE ids for untracked library files) | FiberLifecycle B7 | SPEC-049 |
+| REQ-050 | Durable segment descriptor + open_segment() | FiberLifecycle B8 | SPEC-050 |
+| REQ-051 | Persisted TIFI index sidecar | FiberLifecycle B9 | SPEC-051 |
+| REQ-052 | Persisted partition-map sidecar | FiberLifecycle B10 | SPEC-052 |
+| REQ-053 | Table/catalog-level meta map | FiberLifecycle B11 | SPEC-053 |
+| REQ-054 | Per-section generation table for the bundle cache | FiberLifecycle B12 | SPEC-054 |
+| REQ-055 | Consistent gate amortization policy | FiberLifecycle B13 | SPEC-055 |
+| REQ-056 | Zero-copy WAL replay | FiberLifecycle B14 | SPEC-056 |
 
 ## SPEC details (acceptance = gate)
 
@@ -96,3 +103,11 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 - SPEC-047: shadow-paging compaction — `BcsfReader` gains an optional chain (base ⊕ remap ⊕ delta); the compactor emits a chain instead of copying the whole dataset when `dropped == 0` (identity-prefix remap keeps the hot path indirection-free). Gate: merge cost scales with Δ not n; **Phase-1 lookup gate re-run: median true-fetch <= 15 ns** (SPEC-007) — a miss closes the node as `recorded`; merge-window reader rate >=95% of the post-merge baseline; totals exact.
 - SPEC-048: SoA as the primary stalk layout so `transpose_soa` / `compact_valid` no longer materialize 2x column memory at read time. Gate: `fused_revenue_sum` exact; no regression in the `fused_scan` / `mt_scan` gates.
 - SPEC-049: every `src/**/*.rs` library file carries a FILE id (7 currently untracked: `bcsf/arrow_layout.rs`, `bcsf/coord.rs`, `lsp/graded_log.rs`, `lsp/ring_wal.rs`, `lsp/colimit.rs`, `sheaf-kernel/src/components.rs`, `sheaf-kernel/src/solvers/chebyshev.rs`). Gate: no file without a FILE id; DIP audit clean; no orphan REQ/SPEC/METHOD ids.
+
+- SPEC-050: durable BCSF segment descriptor `[MAGIC][fmt_ver][generation][src_fingerprint][ncells][offsets_off/len][...][crc32]` plus `open_segment()`, so a segment opens without running the builder. Gate: opens without builder; totals exact; torn/corrupt rejected, never half-loaded. Prerequisite for SPEC-051/052.
+- SPEC-051: persisted TIFI index sidecar (value→cells survives process exit). Gate: after restart the lookup returns the same contiguous slice; parity with full scan.
+- SPEC-052: persisted partition-map sidecar (L3-domain assignment + ghost map survive restart). Gate: after restart `domains_fit_l3` and `ghosts_cover_boundaries` still hold.
+- SPEC-053: table/catalog-level meta map (table → segment set + column offsets + generation; ARCHITECTURE.md ROADMAP step 3). Gate: table opens by name; schema version gates every plan.
+- SPEC-054: per-section generation table for the bundle cache — one changed input rewrites only the affected section. Gate: only the changed section rewrites; totals exact.
+- SPEC-055: one gate amortization rule for all fiber gates (build / load / query each stated separately) — `fiber_join_bench` currently times only the query while `fiber_snap_bench` counts its load. Gate: both gates use the same rule; the rule is stated in the gate output and in RUNTIME_COMPARISON.md.
+- SPEC-056: zero-copy WAL replay (keep the mapped buffer alive, return slices instead of copying each payload). Gate: replay exact; no per-record copy.

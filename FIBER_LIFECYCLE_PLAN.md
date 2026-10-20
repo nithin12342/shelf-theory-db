@@ -1,5 +1,5 @@
 # FIBER_LIFECYCLE_PLAN.md — runtime bundle lifecycle + write-time correctness
-**Process: intention-engineering.** Branch: `fiber-bundle-replacement` (off `884809b`).
+**Process: intention-engineering.** Branch: `fiber-bundle-replacement` (created at the plan tip; `main` reset to `884809b` so plan commits live only on the branch).
 Scope decision: **Option A** (N1–N4 + N6). Axis B (N5) is optional and gated separately.
 
 ## 1. Why this plan exists (problem statement)
@@ -46,7 +46,7 @@ Axis A is worth ~18x more wall time per bench cycle than Axis B and carries no p
 | N5 / METHOD-034 | REQ-039 | SPEC-039 | EDIT `crates/sheaf-storage/src/lsp/compactor.rs` (expose frozen epoch) + `fiber_epoch.rs` | Build during concurrent compaction == build on a quiet box (byte-equal aggregates) | MED |
 | N6 / METHOD-035 | REQ-040 | SPEC-040 | NEW `crates/sheaf-engine/src/bin/fiber_lifecycle_bench.rs`; NEW `tests/e2e/fiber_lifecycle/` | 10,000 mixed read/write ops: fiber answers == fallback answers every time; no deadlock, no corruption; lag bounded and reported | MED |
 | N7 / METHOD-036 | REQ-041 | SPEC-041 | EDIT `Cargo.toml` release profile (thin-LTO, `codegen-units=16`) | **ALL THREE** required: (a) clean build ≤55 s (≥2x), (b) bit-identical Phase-3 kernel results, (c) identical measured-query timings across all 11 `SHELF_BINS`. Any miss ⇒ node closes as `recorded`, profile untouched | MED |
-| N8 / METHOD-037 | REQ-042 | SPEC-042 | EDIT `COMPLEXITY_ANALYSIS.md` (compile-time axis row + A9 close-out) | Doc row present and consistent with measured 109.3 s | LOW |
+| N8 / METHOD-037 | REQ-042 | SPEC-042 | EDIT `COMPLEXITY_ANALYSIS.md` (compile-time axis row + A9 close-out), `RUNTIME_COMPARISON.md`, `FAIR_RERUN_PLAN.md` | (a) compile-time row present and consistent with the measured 109.3 s; (b) **fair-rerun disclosure**: `RUNTIME_COMPARISON.md` + `FAIR_RERUN_PLAN.md` state the bundle-cache amortization rule (what is counted: build, load, query) and state that a cached bundle is an **index build, not a query shortcut** — PG/DuckDB build their own indexes, so the comparison stays like-for-like | LOW |
 
 ## 5. Traceability (intention-engineering chain)
 
@@ -109,6 +109,8 @@ Planning (this doc) -> Architecture (section 4-5) -> File Design (FILE ids)
 
 | Field | Value |
 |---|---|
+| Node inventory | **23 slots** = N0–N8 (9) + B1–B14 (14) ⇒ **22 planned + 1 done** (N0) |
+| Refuted (not built) | **6** (B.6 rows) |
 | Source | Parallel session `ses_ea721b69dffd2u1VbzMJskNncf` ("Fiber Bundle Build Avoidance Plan") |
 | Merge rule | **Append only.** Part A (N0–N8) stands unchanged. |
 | ID rule | Part A already consumes REQ-036..042 / SPEC-036..042 / METHOD-030..037 / FILE-063..073. The parallel session's own REQ-036..041 carry *different* meanings, so its items are appended below with **fresh** ids: REQ-043..048 / SPEC-043..048 / METHOD-038..043 / FILE-074..079. |
@@ -135,12 +137,12 @@ Planning (this doc) -> Architecture (section 4-5) -> File Design (FILE ids)
 | Node | REQ | SPEC | Files | Change | Gate (evidence, not claim) |
 |---|---|---|---|---|---|
 | **B1** / METHOD-038 | REQ-043 | SPEC-043 | EDIT `fiber_join_bench.rs`, `contract_join_bench.rs` | Both TPCH fiber bins load-then-build-if-stale via the Part-A codec; report `bundle_load_ms` and `bundle_build_ms` separately | 2nd run `bundle_load_ms` ≪ `bundle_build_ms`; totals **bit-identical** to Part A baseline (93,574,920,897); `gate_fiber_exact=PASS`, `gate_contract_target=PASS` |
-| **B2** / METHOD-039 | REQ-044 | SPEC-044 | NEW `crates/sheaf-engine/src/bin/shared/imdb_fiber.rs`; EDIT `imdb_fiber_bench.rs` | IMDb bundle cache: Q1 (ratings fiber), Q2 (name-count), Q3 (principals-count) as three sections; store **aggregated** fibers only, never raw rows (4.5 GB source → small payload) | q1 count/votes/avg exact; q3 8 decade groups exact; q2 top-10 names+counts exact (regression bar = commit `884809b`); IMDb wall 178.96 s → <1 s |
-| **B3** / METHOD-040 | REQ-045 | SPEC-045 | EDIT `fiber_snap_bench.rs` (+ shared codec) | **Zero-copy load**: map the bundle file and borrow the bytes instead of per-element `Vec::push` deserialization. Measured: 158.1 ms load, of which ~153 ms is copy; file 40.6 MB → 5.1 ms floor at the measured 8.4 GB/s | load ≤ 20 ms (vs 158.1 ms); totals exact; corrupt byte still rejected; `gate_snap_corrupt_reject=PASS` |
+| **B2** / METHOD-039 | REQ-044 | SPEC-044 | NEW `crates/sheaf-engine/src/bin/shared/imdb_fiber.rs`; EDIT `imdb_fiber_bench.rs` | IMDb bundle cache with **FOUR** sections: (1) ratings fiber, (2) name-count fiber, (3) principals-count fiber, (4) **basics columnar arrays** (`ids`/`ty`/`yr`/`drama`, 12.9 M rows, ~181 MB) — Q1 and Q3 iterate the basics arrays, so without (4) the 4,174.8 ms parse stays on the hot path. Only aggregated fibers are persisted, never raw rows. **Requires B3 (zero-copy loader)** — a ~560 MB cache loaded by the current per-element `Vec::push` path costs ~2.1 s (153 ms per 40.6 MB measured) and would fail the gate. | q1 count/votes/avg exact; q3 8 decade groups exact; q2 top-10 names+counts exact (regression bar = commit `884809b`); **IMDb wall 178.96 s → <1 s with the B3 loader in place** (gate is joint: B2 without B3 is not a pass) |
+| **B3** / METHOD-040 | REQ-045 | SPEC-045 | EDIT `fiber_snap_bench.rs` (+ shared codec) | **Zero-copy load**: map the bundle file and borrow the bytes instead of per-element `Vec::push` deserialization. Measured: 158.1 ms load, of which ~153 ms is copy; file 40.6 MB → 5.1 ms floor at the measured 8.4 GB/s. **Prerequisite of B2** (B2's ~560 MB cache needs this loader to meet its gate). | load ≤ 20 ms (vs 158.1 ms); totals exact; corrupt byte still rejected; `gate_snap_corrupt_reject=PASS` |
 | **B4** / METHOD-041 | REQ-046 | SPEC-046 | NEW `crates/sheaf-storage/src/lsp/tombstone_table.rs`; EDIT `lsp/snapshot.rs`, `lsp/mem_complex.rs` | **Versioned tombstone table**: replace the per-snapshot copied live bitmap (`mem_complex.rs:249,258`) with a shared `(cell_id, deletion_gen)` table; a snapshot at gen G sees cell alive iff `deletion_gen > G` | snapshot creation O(1) instead of O(ncells); Phase-2 repeatable-read E2E still PASS; no leaked generation pins (F1 discipline holds) |
 | **B5** / METHOD-042 | REQ-047 | SPEC-047 | EDIT `bcsf/reader.rs` (FILE-015), `bcsf/builder.rs` (FILE-048), `lsp/compactor.rs` (FILE-019) | **Shadow paging**: `BcsfReader` gains an optional chain `base ⊕ remap ⊕ delta`; compactor emits a chain instead of copying the whole dataset when `dropped == 0` (remap is then an identity prefix — the hot path stays indirection-free) | merge cost scales with Δ not n; **Phase-1 lookup gate re-run: median true-fetch ≤15 ns** (SPEC-007) — a miss closes the node as `recorded`; merge-window reader rate ≥95% of post-merge baseline; totals exact |
 | **B6** / METHOD-043 | REQ-048 | SPEC-048 | EDIT `bcsf/arrow_layout.rs` | **SoA as primary stalk layout** (column descriptor decides physical layout at write time) so `transpose_soa` / `compact_valid` no longer materialize 2× memory at read time | `fused_revenue_sum` exact; memory spike eliminated; no regression in `fused_scan` / `mt_scan` gates |
-| **B7** / METHOD-044 | REQ-049 | SPEC-049 | EDIT `SKELETON.md` | **SKELETON drift fix**: register FILE ids for the 7 load-bearing library files that have none — `bcsf/arrow_layout.rs`, `bcsf/coord.rs`, `lsp/graded_log.rs`, `lsp/ring_wal.rs`, `lsp/colimit.rs`, `sheaf-kernel/src/components.rs`, `sheaf-kernel/src/solvers/chebyshev.rs` | every `src/**/*.rs` file has a FILE id; DIP audit still clean; no orphan REQ/SPEC/METHOD ids |
+| **B7** / METHOD-044 | REQ-049 | SPEC-049 | EDIT `SKELETON.md` | **SKELETON drift fix**: register FILE ids for the 7 load-bearing library files that have none — `bcsf/arrow_layout.rs`, `bcsf/coord.rs`, `lsp/graded_log.rs`, `lsp/ring_wal.rs`, `lsp/colimit.rs`, `sheaf-kernel/src/components.rs`, `sheaf-kernel/src/solvers/chebyshev.rs` | every `src/**` **library** file has a FILE id; `src/bin/**` is EXEMPT per as-built delta A1 ("Bench binaries + harness helpers carry no FILE IDs"); DIP audit still clean; no orphan REQ/SPEC/METHOD ids |
 
 ## B.3 Measured evidence behind the appended nodes
 
@@ -158,10 +160,19 @@ Planning (this doc) -> Architecture (section 4-5) -> File Design (FILE ids)
 ## B.4 Ordering (Part B only; Part A ordering unchanged)
 
 ```
-B2 (IMDb cache) ──► B3 (zero-copy load) ──► B1 (TPCH wiring)   [bench spine]
+B3 (zero-copy load) ──► B2 (IMDb cache) ──► B1 (TPCH wiring)   [bench spine]
 B4 (tombstones) ──► B5 (shadow paging) ──► B6 (SoA layout)     [storage spine]
 B7 (skeleton drift)  independent — do anytime
 ```
+
+**Scope label — Part A N3 / N4(partial) / N5 / N6 are "future-live-fiber" nodes.**
+They defend a *future* design where fibers are built over live BCSF cells. Today
+the bench fibers are derived from `.tbl`/`.tsv` files and never from BCSF cell
+ids, so compaction cannot dangle a fiber key and the epoch stamp has nothing to
+stamp. They are legitimate to plan, but they are 4 high-effort MED-risk nodes
+sitting at P1 **ahead of** the 179 s win. Re-prioritised: build **B3 → B2 → B1**
+first, then **B4**, and treat N3/N4/N5/N6 as a second wave to be scheduled only
+when a live-fiber design exists.
 
 ## B.5 Remaining identified items (listed, not scheduled — append-only, nothing dropped)
 
@@ -172,8 +183,8 @@ B7 (skeleton drift)  independent — do anytime
 | **B10** | REQ-052 | SPEC-052 | METHOD-047 | parallel C3 | **Persisted partition-map sidecar**: L3-domain assignment + ghost map survive restart | after restart, `domains_fit_l3` + `ghosts_cover_boundaries` still hold | 🟡 P3 |
 | **B11** | REQ-053 | SPEC-053 | METHOD-048 | parallel C4 | **Table/catalog-level meta map** (table → segment set + column offsets + generation). Already on the ROADMAP (`ARCHITECTURE.md:110` step 3) | table opens by name; schema version gates every plan | 🟡 P3 (ROADMAP) |
 | **B12** | REQ-054 | SPEC-054 | METHOD-049 | parallel A6 | **Per-section generation table** for the bundle cache: one changed input rewrites only the affected section, not all 40.6 MB | only the changed section rewrites; totals exact | 🟢 P4 |
-| **B13** | REQ-055 | SPEC-055 | — | parallel A7 | **Consistent gate amortization policy**: `fiber_join_bench` times only the query while `fiber_snap_bench` counts its load — one rule for both, stated in the gate output | both gates use the same rule; README/RUNTIME_COMPARISON updated | 🟢 P4 |
-| **B14** | REQ-056 | SPEC-056 | — | parallel B5 | **Zero-copy WAL replay** (keep the mapped buffer, return slices instead of `payload.to_vec()` per record) | replay exact; no per-record copy | 🟢 P4 (negligible) |
+| **B13** | REQ-055 | SPEC-055 | METHOD-050 | parallel A7 | **Consistent gate amortization policy**: `fiber_join_bench` times only the query while `fiber_snap_bench` counts its load — one rule for both, stated in the gate output | both gates use the same rule; README/RUNTIME_COMPARISON updated | 🟢 P4 |
+| **B14** | REQ-056 | SPEC-056 | METHOD-051 | parallel B5 | **Zero-copy WAL replay** (keep the mapped buffer, return slices instead of `payload.to_vec()` per record) | replay exact; no per-record copy | 🟢 P4 (negligible) |
 
 | Note | Detail |
 |---|---|

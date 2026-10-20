@@ -25,3 +25,8 @@ data/
 *.zip
 *.gz
 
+
+# Session artifacts (large, not code)
+fiber-bundle-build-avoidance-plan.json
+html-conversation-to-timestamped-markdown.json
+
