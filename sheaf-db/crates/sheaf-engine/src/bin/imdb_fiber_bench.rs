@@ -152,6 +152,80 @@ fn main() {
     }
     let q3_ms = t0.elapsed().as_secs_f64() * 1e3;
 
+    // ---------------- Q2: name-count fibers + top-10 ----------------
+    // SQL shape: principals JOIN basics JOIN ratings JOIN names, filtered to
+    // actor/actress with birthyear>=1970 and avg>=8.0, grouped by
+    // primaryname, top 10 by count desc then name asc.
+    let t_build2 = Instant::now();
+    // names: nconst id -> (primaryname, birthyear); titles: set of known titles
+    let mut nidx: HashMap<u64, u32> = HashMap::with_capacity(16_000_000);
+    let mut nname: Vec<String> = Vec::with_capacity(16_000_000);
+    let mut nyear: Vec<i32> = Vec::with_capacity(16_000_000);
+    {
+        let content = std::fs::read(format!("{IMDB}\\name.basics.tsv")).unwrap();
+        let mut start = 0usize;
+        let mut first = true;
+        for i in 0..content.len() {
+            if content[i] == b'\n' {
+                let line = &content[start..i];
+                start = i + 1;
+                if line.is_empty() {
+                    continue;
+                }
+                if first {
+                    first = false;
+                    continue;
+                }
+                if let Some(id) = id_of(field(line, 0)) {
+                    let nm = String::from_utf8_lossy(field(line, 1)).to_string();
+                    let by = std::str::from_utf8(field(line, 2)).unwrap_or("\\N");
+                    nidx.insert(id, nname.len() as u32);
+                    nname.push(nm);
+                    nyear.push(if by.len() == 4 { by.parse().unwrap_or(0) } else { 0 });
+                }
+            }
+        }
+    }
+    let mut known: HashSet<u64> = HashSet::with_capacity(13_000_000);
+    for id in &ids {
+        known.insert(*id);
+    }
+    // counts per name index (only filtered names) -> later grouped by name
+    let mut counts: HashMap<u32, u32> = HashMap::with_capacity(1_000_000);
+    for_each_row(&format!("{IMDB}\\title.principals.tsv"), |line| {
+        let cat = field(line, 3);
+        if cat != b"actor" && cat != b"actress" {
+            return;
+        }
+        let (Some(t), Some(n)) = (id_of(field(line, 0)), id_of(field(line, 2))) else {
+            return;
+        };
+        if !known.contains(&t) {
+            return;
+        }
+        let Some(&(avg, _v)) = rat.get(&t) else { return };
+        if avg < 8.0 {
+            return;
+        }
+        let Some(&i) = nidx.get(&n) else { return };
+        if nyear[i as usize] < 1970 {
+            return;
+        }
+        *counts.entry(i).or_insert(0) += 1;
+    });
+    let q2_build_s = t_build2.elapsed().as_secs_f64();
+
+    let t0 = Instant::now();
+    // group by primaryname (SQL groups by the NAME, not the person id)
+    let mut by_name: HashMap<&str, u32> = HashMap::with_capacity(counts.len());
+    for (&i, &c) in counts.iter() {
+        *by_name.entry(nname[i as usize].as_str()).or_insert(0) += c;
+    }
+    let mut top: Vec<(&str, u32)> = by_name.into_iter().collect();
+    top.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    top.truncate(10);
+    let q2_ms = t0.elapsed().as_secs_f64() * 1e3;
+
     // ---------------- gates ----------------
     let grab = |key: &str| -> String {
         let pat = format!("\"{}\": ", key);
@@ -173,15 +247,20 @@ fn main() {
         if v_ok { "PASS" } else { "FAIL" },
         if a_rel < 1e-5 { "PASS" } else { "FAIL" }, a_rel);
 
-    // expected_rows_compact: "dec,cnt,avg;dec,cnt,avg;..." (single line)
-    let compact = txt
-        .split("\"expected_rows_compact\": \"")
-        .nth(1)
-        .unwrap_or("")
-        .split('"')
-        .next()
-        .unwrap_or("")
-        .to_string();
+    // expected_rows_compact: "dec,cnt,avg;dec,cnt,avg;..." (single line).
+    // Anchored per query block: q2 and q3 both carry the key.
+    let compact_in = |q: &str| -> String {
+        let block = txt.split(&format!("\"{q}\": {{")).nth(1).unwrap_or("");
+        block
+            .split("\"expected_rows_compact\": \"")
+            .nth(1)
+            .unwrap_or("")
+            .split('"')
+            .next()
+            .unwrap_or("")
+            .to_string()
+    };
+    let compact = compact_in("q3");
     let mut exp3: Vec<(i32, u64, f64)> = Vec::new();
     for row in compact.split(';').filter(|s| !s.trim().is_empty()) {
         let n: Vec<&str> = row.split(',').collect();
@@ -209,13 +288,35 @@ fn main() {
     print!("{detail}");
     println!("gate_q3_groups={}", if q3_ok { "PASS" } else { "FAIL" });
 
+    // Q2 gate: name,count pairs from the compact baseline (anchored to q2).
+    let q2c = compact_in("q2");
+    let mut q2_ok = true;
+    let mut q2_detail = String::new();
+    for (i, row) in q2c.split(';').filter(|s| !s.trim().is_empty()).enumerate() {
+        let p: Vec<&str> = row.split(',').collect();
+        if p.len() != 2 {
+            continue;
+        }
+        let exp_name = p[0];
+        let exp_cnt: u32 = p[1].trim().parse().unwrap_or(0);
+        let (got_name, got_cnt) = top.get(i).map(|(n, c)| (*n, *c)).unwrap_or(("", 0));
+        let ok = got_name == exp_name && got_cnt == exp_cnt;
+        q2_ok &= ok;
+        q2_detail.push_str(&format!(
+            "  #{i}: sql({exp_name},{exp_cnt}) shelf({got_name},{got_cnt}) {}\n",
+            if ok { "PASS" } else { "FAIL" }));
+    }
+    println!("q2_fiber: build_s={:.1} query_ms={:.0} top10={}", q2_build_s, q2_ms, top.len());
+    print!("{q2_detail}");
+    println!("gate_q2_top10={}", if q2_ok { "PASS" } else { "FAIL" });
+
     let out = format!(
-        "{{\"q1\": {{\"fiber_build_s\": {fib_build_s:.2}, \"parse_ms\": {parse_ms:.1}, \"query_ms\": {q1_ms:.1}, \"count\": {cnt}, \"votes\": {votes}, \"avg\": {q1_avg:.10}}}, \"q3\": {{\"fiber_build_s\": {q3_build_s:.2}, \"query_ms\": {q3_ms:.1}, \"groups\": {}}}}}\n",
-        dcnt.len()
+        "{{\"q1\": {{\"fiber_build_s\": {fib_build_s:.2}, \"parse_ms\": {parse_ms:.1}, \"query_ms\": {q1_ms:.1}, \"count\": {cnt}, \"votes\": {votes}, \"avg\": {q1_avg:.10}}}, \"q3\": {{\"fiber_build_s\": {q3_build_s:.2}, \"query_ms\": {q3_ms:.1}, \"groups\": {}}}, \"q2\": {{\"fiber_build_s\": {q2_build_s:.2}, \"query_ms\": {q2_ms:.1}, \"top10\": {}}}}}\n",
+        dcnt.len(), top.len()
     );
     let _ = std::fs::write(OUT, out);
     println!("SAVED {}", OUT);
-    if !(c_ok && v_ok && a_rel < 1e-5 && q3_ok) {
+    if !(c_ok && v_ok && a_rel < 1e-5 && q3_ok && q2_ok) {
         std::process::exit(1);
     }
     println!("IMDB-FIBER-GATES: ALL PASS");

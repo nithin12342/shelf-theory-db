@@ -159,6 +159,11 @@ def main():
             res["queries"][qn]["expected_rows_compact"] = ";".join(
                 f"{int(r[0])},{int(r[1])},{float(r[2]):.10f}" for r in drows)
             print(f"q3 expected: {[(r[0], r[1]) for r in drows]}", flush=True)
+        if qn == "q2":
+            # expected rows for the ShelfDB fiber counterpart (name, count)
+            res["queries"][qn]["expected_rows_compact"] = ";".join(
+                f"{r[0]},{int(r[1])}" for r in drows)
+            print(f"q2 expected: {[(r[0], r[1]) for r in drows]}", flush=True)
         print(f"{qn}: rows={len(drows)} md5={dh[:12]} duck={dms:.0f}ms pg={pms:.0f}ms", flush=True)
     res["gate_cross_engine"] = "PASS"
     res["dialect_note"] = ("Two silent dialect divergences found by the md5 cross-engine "
