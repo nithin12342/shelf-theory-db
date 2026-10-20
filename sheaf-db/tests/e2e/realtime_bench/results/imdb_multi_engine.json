@@ -1,0 +1,86 @@
+{
+  "run_20261020_1531": {
+    "sqlite": true,
+    "mariadb": true,
+    "mongodb": true,
+    "redis": true,
+    "scylladb": true,
+    "duckdb_q1_ms": 345.7,
+    "pg_q1_ms": 1918.1,
+    "shelfdb_q1_ms": 142.7
+  },
+  "run_20261020_1531_detail": {
+    "sqlite": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440741,
+      "ms": 352.9841000017768,
+      "load_s": 3.481716000002052,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 7.63e-15"
+    },
+    "mariadb": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440566,
+      "ms": 1040.3689999984636,
+      "load_s": 20.214709899999434,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 1.40e-14"
+    },
+    "mongodb": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440741,
+      "ms": 183618.64159999823,
+      "load_s": 35.91063189999841,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 7.63e-15"
+    },
+    "redis": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145503941566828,
+      "ms": 199.39439999870956,
+      "lookup_ms": 4255.035199999838,
+      "load_s": 2.221304800001235,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 2.73e-07"
+    },
+    "scylladb": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440566,
+      "ms": 265.5649000007543,
+      "range_ms": 63.178399999742396,
+      "range_rows": 10000,
+      "load_s": 10.768537699997978,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 1.40e-14"
+    }
+  },
+  "truth": {
+    "count": 44906,
+    "votes": 294435444,
+    "avg": 8.14550616844068
+  },
+  "run_20261020_1533": {
+    "neo4j": true,
+    "duckdb_q1_ms": 345.7,
+    "pg_q1_ms": 1918.1,
+    "shelfdb_q1_ms": 142.7
+  },
+  "run_20261020_1533_detail": {
+    "neo4j": {
+      "pairs": 173716,
+      "expected_pairs": 173716,
+      "ms": 385.050400000182,
+      "load_s": 16.000084199997218,
+      "titles": 20885,
+      "edges": 219681,
+      "persons": 184073,
+      "gate": "PASS",
+      "gate_detail": "pairs 173716 == 173716"
+    }
+  }
+}
