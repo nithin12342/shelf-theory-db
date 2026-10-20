@@ -1,0 +1,1 @@
+{"q1": {"fiber_build_s": 0.20, "parse_ms": 6140.7, "query_ms": 97.5, "count": 44906, "votes": 294435444, "avg": 8.1455061756}, "q3": {"fiber_build_s": 55.39, "query_ms": 317.7, "groups": 8}}
