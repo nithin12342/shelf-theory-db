@@ -162,3 +162,32 @@ B2 (IMDb cache) ──► B3 (zero-copy load) ──► B1 (TPCH wiring)   [benc
 B4 (tombstones) ──► B5 (shadow paging) ──► B6 (SoA layout)     [storage spine]
 B7 (skeleton drift)  independent — do anytime
 ```
+
+## B.5 Remaining identified items (listed, not scheduled — append-only, nothing dropped)
+
+| Item | REQ | SPEC | METHOD | Source | What | Gate | Priority |
+|---|---|---|---|---|---|---|---|
+| **B8** | REQ-050 | SPEC-050 | METHOD-045 | parallel C1 | **Durable segment descriptor**: on-disk BCSF segment header `[MAGIC][fmt_ver][generation][src_fingerprint][ncells][offsets_off/len][...][crc32]` + `open_segment()` so a segment opens without running the builder | opens without builder; totals exact; torn/corrupt rejected, never half-loaded | 🟠 P2 (unblocks B9/B10) |
+| **B9** | REQ-051 | SPEC-051 | METHOD-046 | parallel C2 | **Persisted TIFI index sidecar**: value→cells index survives process exit (today: RAM-only, rebuilt per process) | after restart, lookup returns the same contiguous slice; parity with scan | 🟡 P3 |
+| **B10** | REQ-052 | SPEC-052 | METHOD-047 | parallel C3 | **Persisted partition-map sidecar**: L3-domain assignment + ghost map survive restart | after restart, `domains_fit_l3` + `ghosts_cover_boundaries` still hold | 🟡 P3 |
+| **B11** | REQ-053 | SPEC-053 | METHOD-048 | parallel C4 | **Table/catalog-level meta map** (table → segment set + column offsets + generation). Already on the ROADMAP (`ARCHITECTURE.md:110` step 3) | table opens by name; schema version gates every plan | 🟡 P3 (ROADMAP) |
+| **B12** | REQ-054 | SPEC-054 | METHOD-049 | parallel A6 | **Per-section generation table** for the bundle cache: one changed input rewrites only the affected section, not all 40.6 MB | only the changed section rewrites; totals exact | 🟢 P4 |
+| **B13** | REQ-055 | SPEC-055 | — | parallel A7 | **Consistent gate amortization policy**: `fiber_join_bench` times only the query while `fiber_snap_bench` counts its load — one rule for both, stated in the gate output | both gates use the same rule; README/RUNTIME_COMPARISON updated | 🟢 P4 |
+| **B14** | REQ-056 | SPEC-056 | — | parallel B5 | **Zero-copy WAL replay** (keep the mapped buffer, return slices instead of `payload.to_vec()` per record) | replay exact; no per-record copy | 🟢 P4 (negligible) |
+
+| Note | Detail |
+|---|---|
+| B13/B14 are policy/hygiene, not code-heavy | B13 is a rule + doc change; B14 is a small optimisation |
+| B8 is the enabling node for B9/B10 | the sidecars need a durable segment format to hang off |
+| Nothing from the parallel session's 22-item list is dropped | A1→N1, A2→N2, A3→B1, A4→B2, A5→B3, A6→B12, A7→B13, B1→B4, B2/B3→B5, B4→B6, B5→B14, C1→B8, C2→B9, C3→B10, C4→B11, D1→N0, D2→N7, E1→B7, E2→N6/N8, E3→N6/N8 |
+
+## B.6 Explicitly not building (measured and refuted — retained for the record)
+
+| Idea | Why rejected | Measurement |
+|---|---|---|
+| L1/L2/SRAM tier manager | layout tuning already closed | R1: bounds checks within noise (12.3 / 14.8 / 10.9 ms) |
+| More thread scaling | bandwidth-capped | W1: 4 threads only 1.25x; 48 MB floor ~5.7 ms |
+| Kafka-style no-fsync-per-op | breaks durability (REQ-009/REQ-032) | W2: fsync 1.2 ms vs write-only 9 us |
+| Per-tier checksums | capped ~2% | W3: checksum = 2% of a durable op |
+| Persisting raw memory addresses | breaks restart, compaction, MVCC pinning, cross-node reads | offsets vs addresses table (SHEAF_THEORY_REVIEW) |
+| Explicit L2 pinning / prefetch hints | hardware prefetcher wins | R2: iterator-is-faster refuted |
