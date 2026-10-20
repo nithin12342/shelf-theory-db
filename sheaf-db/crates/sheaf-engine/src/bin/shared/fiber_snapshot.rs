@@ -54,6 +54,12 @@ impl Bundle {
         self.bytes.len()
     }
 
+    /// Borrow the raw file bytes (no copy) — used by the reference path in
+    /// the bench so the old-path comparison runs on the SAME buffer.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     /// Iterator over (cust, revenue) pairs, decoded on the fly from the
     /// borrowed bytes. No allocation, no per-element copy.
     pub fn fibers(&self) -> FiberIter<'_> {

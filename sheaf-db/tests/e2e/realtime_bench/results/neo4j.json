@@ -1,192 +1,23 @@
 {
-  "run1_quiet_box": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 2694.3,
-      "p99": 15659.8,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 3309.4,
-      "p99": 11095.6,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 878.0,
-      "paths": 600000,
-      "n": 3
-    }
+  "neo4j_version": "5.26.32",
+  "counts": {
+    "customers": 150000,
+    "orders": 1500000,
+    "lines": 600000
   },
-  "run2_cold_cache": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 5159.7,
-      "p99": 14033.8,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 4676.2,
-      "p99": 13891.3,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 1000.5,
-      "paths": 600000,
-      "n": 3
-    }
+  "point_lookup_us": {
+    "p50": 5850.7,
+    "p99": 12890.8,
+    "n": 5000
   },
-  "run3_kept_install": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 2639.3,
-      "p99": 9286.9,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 4228.8,
-      "p99": 13655.7,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 868.6,
-      "paths": 600000,
-      "n": 3
-    }
+  "two_hop_us": {
+    "p50": 5581.0,
+    "p99": 18285.1,
+    "n": 200
   },
-  "run4_readywait": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 2279.6,
-      "p99": 6503.7,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 2923.9,
-      "p99": 18419.7,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 637.7,
-      "paths": 600000,
-      "n": 3
-    },
-    "note": "run4 retry with 75s ready-wait. BEST traversal ever (638ms)."
-  },
-  "note": "8 runs; latest run8_20261015.",
-  "run5_20261015": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 1951.3,
-      "p99": 8668.5,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 1673.7,
-      "p99": 6714.9,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 547.2,
-      "paths": 600000,
-      "n": 3
-    },
-    "note": "runner 2026-10-15 16:17 UTC+05:30"
-  },
-  "run6_20261015": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 2409.6,
-      "p99": 9412.2,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 3463.4,
-      "p99": 16848.4,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 710.3,
-      "paths": 600000,
-      "n": 3
-    },
-    "note": "runner 2026-10-15 17:48 UTC+05:30"
-  },
-  "run7_20261015": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 1765.6,
-      "p99": 8053.7,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 1850.4,
-      "p99": 8682.6,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 575.4,
-      "paths": 600000,
-      "n": 3
-    },
-    "note": "runner 2026-10-15 20:35 UTC+05:30"
-  },
-  "run8_20261015": {
-    "neo4j_version": "5.26.32",
-    "counts": {
-      "customers": 150000,
-      "orders": 1500000,
-      "lines": 600000
-    },
-    "point_lookup_us": {
-      "p50": 1805.7,
-      "p99": 8169.0,
-      "n": 5000
-    },
-    "two_hop_us": {
-      "p50": 1724.5,
-      "p99": 6929.4,
-      "n": 200
-    },
-    "full_traversal_ms": {
-      "p50": 637.1,
-      "paths": 600000,
-      "n": 3
-    },
-    "note": "runner 2026-10-15 20:55 UTC+05:30"
+  "full_traversal_ms": {
+    "p50": 1398.5,
+    "paths": 600000,
+    "n": 3
   }
 }

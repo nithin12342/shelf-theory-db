@@ -305,10 +305,15 @@ def run_neo4j(titles, rat, joined, t):
     uniq_persons = sorted({n for _, n in edges})
     drv = GraphDatabase.driver(NEO4J[0], auth=(NEO4J[1], NEO4J[2]))
     with drv.session() as s:
-        # Delete any previous graph in bounded batches: one DETACH DELETE
-        # over the old 2.25M-node graph exhausted the 4.2 GiB heap.
+        # Delete ONLY this bench's own labels, in bounded batches.
+        # A label-agnostic delete (MATCH (n) ... DETACH DELETE n) wiped the
+        # TPC-H-derived graph that neo4j_bench.py measures (labels
+        # Customer/Order/Line) and produced a bogus 8.6 ms "traversal" over an
+        # EMPTY database on 2026-10-20. The IMDb graph uses Title/Person,
+        # which no other bench touches.
         while True:
-            r = s.run("MATCH (n) WITH n LIMIT 10000 DETACH DELETE n "
+            r = s.run("MATCH (n) WHERE n:Title OR n:Person "
+                      "WITH n LIMIT 10000 DETACH DELETE n "
                       "RETURN count(*) AS c").single()
             if not r or r["c"] == 0:
                 break

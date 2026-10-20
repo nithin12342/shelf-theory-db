@@ -121,7 +121,7 @@
     },
     "note": "run4 data-kept rerun, mid-band (box moderately loaded)."
   },
-  "note": "10 runs; latest run10_20261016.",
+  "note": "11 runs; latest run11_20261020.",
   "run5_20261014": {
     "engine": "pg",
     "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
@@ -288,5 +288,36 @@
       "n": 10000
     },
     "note": "runner 2026-10-16 12:44 UTC+05:30"
+  },
+  "run11_20261020": {
+    "engine": "pg",
+    "version": "PostgreSQL 18.6 on x86_64-windows, compiled by msvc-19.44.35229, 64-bit",
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "point_lookup_us": {
+      "p50": 420.9,
+      "p99": 1199.4,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 5613.2,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 582.5,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 395.2,
+      "p99": 681.0,
+      "n": 10000
+    },
+    "note": "runner 2026-10-20 21:01 UTC+05:30"
   }
 }
