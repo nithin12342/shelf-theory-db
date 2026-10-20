@@ -69,10 +69,15 @@ ENGINES = {
               "pexec": [r"D:\bench\apps\redis\redis-server.exe", "--dir", r"D:\bench\data\redis",
                         "--maxmemory", "4gb", "--maxmemory-policy", "noeviction", "--port", "6379"],
               "port": 6379, "wait": 30, "stop_im": "redis-server.exe"},
-    "mongodb": {"bench": "py mongo_bench.py", "json": "mongodb.json",
-                "pexec": [r"D:\bench\scoop\shims\mongod.exe", "--dbpath", r"D:\bench\data\mongo",
-                          "--port", "27017", "--bind_ip", "127.0.0.1"],
-                "port": 27017, "wait": 60, "ready_wait": 15, "stop_im": "mongod.exe"},
+    # MongoDB (document store) was UNINSTALLED on 2026-10-20: its $lookup
+    # join over the IMDb data measured 183,618.6 ms vs ShelfDB's 142.7 ms
+    # (1,287x) — the document-store join path is the wrong NoSQL opponent
+    # for this workload. ScyllaDB (CQL, wide-column) takes the NoSQL slot:
+    # it moves the join to write time and answers the same numbers from a
+    # clustering-range scan. See imdb_scylla_bench.py.
+    "scylladb": {"bench": "py scylla_bench.py", "json": "scylladb.json",
+                 "start": "docker start bench-scylla", "port": 9042, "wait": 220, "ready_wait": 150,
+                 "stop_cmd": "docker stop bench-scylla"},
     "mariadb": {"bench": "py sql_bench.py mariadb", "json": "mariadb.json",
                 "pexec": [r"D:\bench\scoop\apps\mariadb\current\bin\mysqld.exe",
                           "--datadir=D:\\bench\\data\\mariadb", "--port=3307",
