@@ -97,7 +97,7 @@ ENGINES = {
                  "start": "docker start bench-scylla", "port": 9042, "wait": 220, "ready_wait": 150,
                  "stop_cmd": "docker stop bench-scylla"},
 }
-ORDER = ["sqlite", "duckdb", "redis", "mongodb", "mariadb", "pg", "neo4j", "scylladb"]
+ORDER = ["sqlite", "duckdb", "redis", "mariadb", "pg", "neo4j", "scylladb"]
 
 SHELF_BINS = [("sheaf-engine", "tpch_scan_bench"), ("sheaf-engine", "fused_scan_bench"),
               ("sheaf-engine", "fiber_join_bench"), ("sheaf-engine", "fiber_snap_bench"),
