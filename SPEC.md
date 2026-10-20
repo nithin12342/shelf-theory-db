@@ -46,6 +46,13 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-040 | Concurrent read/write fiber correctness gate | FiberLifecycle N6 | SPEC-040 |
 | REQ-041 | Release-profile restructure under a 3-part no-regression bar | FiberLifecycle N7 | SPEC-041 |
 | REQ-042 | Complexity model covers the compile-time axis | FiberLifecycle N8 | SPEC-042 |
+| REQ-043 | TPCH fiber bins use the cached bundle | FiberLifecycle B1 | SPEC-043 |
+| REQ-044 | IMDb fiber bundle cache (Q1/Q2/Q3 sections) | FiberLifecycle B2 | SPEC-044 |
+| REQ-045 | Zero-copy (mmap) bundle load | FiberLifecycle B3 | SPEC-045 |
+| REQ-046 | Versioned tombstone table (no per-snapshot bitmap copy) | FiberLifecycle B4 | SPEC-046 |
+| REQ-047 | Shadow-paging compaction (reader chain, no full copy) | FiberLifecycle B5 | SPEC-047 |
+| REQ-048 | SoA as primary stalk layout (no read-time transpose copy) | FiberLifecycle B6 | SPEC-048 |
+| REQ-049 | SKELETON drift fix (FILE ids for untracked library files) | FiberLifecycle B7 | SPEC-049 |
 
 ## SPEC details (acceptance = gate)
 
@@ -81,3 +88,11 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 - SPEC-040: concurrent read/write stress at volume. Gate: 10,000 mixed read/write ops where every fiber-backed answer equals the scan-fallback answer; no deadlock, no corruption; staleness lag bounded and reported (not median-only). E2E: `tests/e2e/fiber_lifecycle/`.
 - SPEC-041: release-profile restructure (thin-LTO + `codegen-units=16`) is allowed ONLY with all three of: (a) clean release build <=55 s from a fresh `CARGO_TARGET_DIR` (>=2x speedup over the measured 109.3 s), (b) bit-identical Phase-3 kernel results, (c) identical measured-query timings across all 11 `SHELF_BINS`. Any miss => node closes as `recorded` and the profile is untouched (LTO was a deliberate Phase-3 kernel choice).
 - SPEC-042: `COMPLEXITY_ANALYSIS.md` carries a compile-time axis row (clean release build 109.3 s; warm incremental 0.19 s; incremental-after-touch 0.8 s; release artifacts 0.05 GB) and closes out the A9 snapshot-checksum finding.
+
+- SPEC-043: TPCH fiber bins (`fiber_join_bench`, `contract_join_bench`) load the cached bundle and only build when the fingerprint misses. Gate: 2nd run `bundle_load_ms` << `bundle_build_ms`; totals bit-identical to the pre-change baseline (93,574,920,897); `gate_fiber_exact=PASS`, `gate_contract_target=PASS`.
+- SPEC-044: IMDb fiber bundle cache with three independent sections (Q1 ratings fiber, Q2 name-count, Q3 principals-count); only aggregated fibers are persisted, never raw rows. Gate: q1 count/votes/avg exact, q3 8 decade groups exact, q2 top-10 names+counts exact (regression bar = commit `884809b`); IMDb wall time 178.96 s -> <1 s.
+- SPEC-045: zero-copy bundle load (map the file, borrow the bytes; no per-element `Vec::push` deserialize). Gate: load <= 20 ms (measured 158.1 ms, of which ~153 ms was copy); totals exact; corrupt byte still rejected (`gate_snap_corrupt_reject=PASS`).
+- SPEC-046: versioned tombstone table replaces the per-snapshot copied live bitmap. Gate: snapshot creation O(1) instead of O(ncells); Phase-2 repeatable-read E2E PASS; no leaked generation pins (F1 registry discipline holds).
+- SPEC-047: shadow-paging compaction — `BcsfReader` gains an optional chain (base ⊕ remap ⊕ delta); the compactor emits a chain instead of copying the whole dataset when `dropped == 0` (identity-prefix remap keeps the hot path indirection-free). Gate: merge cost scales with Δ not n; **Phase-1 lookup gate re-run: median true-fetch <= 15 ns** (SPEC-007) — a miss closes the node as `recorded`; merge-window reader rate >=95% of the post-merge baseline; totals exact.
+- SPEC-048: SoA as the primary stalk layout so `transpose_soa` / `compact_valid` no longer materialize 2x column memory at read time. Gate: `fused_revenue_sum` exact; no regression in the `fused_scan` / `mt_scan` gates.
+- SPEC-049: every `src/**/*.rs` library file carries a FILE id (7 currently untracked: `bcsf/arrow_layout.rs`, `bcsf/coord.rs`, `lsp/graded_log.rs`, `lsp/ring_wal.rs`, `lsp/colimit.rs`, `sheaf-kernel/src/components.rs`, `sheaf-kernel/src/solvers/chebyshev.rs`). Gate: no file without a FILE id; DIP audit clean; no orphan REQ/SPEC/METHOD ids.
