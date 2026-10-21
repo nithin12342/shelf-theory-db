@@ -2,6 +2,7 @@
 pub mod compactor;
 pub mod colimit;
 pub mod epoch_wal;
+pub mod fiber_epoch;
 pub mod graded_log;
 pub mod mem_complex;
 pub mod preagg;

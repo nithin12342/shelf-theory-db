@@ -9,6 +9,7 @@ use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 use crate::bcsf::builder::BcsfBuilder;
+use super::fiber_epoch::{base_fingerprint, Epoch};
 use super::mem_complex::MemComplex;
 
 pub struct MergeStats {
@@ -17,6 +18,10 @@ pub struct MergeStats {
     pub ms: u128,
     pub pinned: bool,
     pub pin_core: Option<usize>,
+    /// N5: the epoch the merge was FROZEN at. A fiber built from this
+    /// merge is bound to this epoch; loading it against a newer epoch
+    /// fails loud (it never answers) and the caller falls back to a scan.
+    pub frozen_epoch: Epoch,
 }
 
 pub enum Job {
@@ -116,8 +121,11 @@ fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result
     }
     let new_base = builder.finish();
     new_base.validate().map_err(|e| format!("merged base invalid: {}", e))?;
+    // N5: freeze the epoch of this merge: the snapshot's generation plus
+    // the fingerprint of the base it produced.
+    let frozen_epoch = Epoch::new(snap.gen, base_fingerprint(&new_base));
     let live_flags = vec![true; new_base.len()];
     let merged_cells = new_base.len();
     mem.install_base(new_base, live_flags, &ids, translations)?;
-    Ok(MergeStats { merged_cells, dropped_cells: dropped, ms: t0.elapsed().as_millis(), pinned, pin_core })
+    Ok(MergeStats { merged_cells, dropped_cells: dropped, ms: t0.elapsed().as_millis(), pinned, pin_core, frozen_epoch })
 }

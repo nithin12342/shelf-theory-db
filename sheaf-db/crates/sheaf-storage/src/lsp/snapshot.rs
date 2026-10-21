@@ -41,6 +41,13 @@ impl Snapshot {
         Self { gen, base, base_death, batches, registry }
     }
 
+    /// N5: the epoch this snapshot is frozen at (its generation plus the
+    /// fingerprint of the base it sees). A fiber built from this snapshot
+    /// carries this epoch.
+    pub fn epoch(&self, src_fingerprint: u64) -> super::fiber_epoch::Epoch {
+        super::fiber_epoch::Epoch::new(self.gen, src_fingerprint)
+    }
+
     /// B4: liveness of a base cell AS OF this snapshot's generation.
     /// A cell deleted after the snapshot was taken stays alive for it
     /// (repeatable reads), without any per-snapshot copy of the liveness
