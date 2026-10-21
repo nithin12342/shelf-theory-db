@@ -1,7 +1,7 @@
 # SKELETON.md — sheaf-db (Planning gate artifact)
 
 system: sheaf-db
-status: 27/29 methods e2e_passed (unchanged); +21 built/verified nodes (+B4 versioned tombstones, +B14 zero-copy WAL replay) (METHOD-030 shared fiber module, 031 bundle cache, 038 TPCH wiring pending, 039 IMDb sectioned bundle, 040 zero-copy load, 041 tombstones pending, 042 shadow paging pending, 043 SoA pending, 044 skeleton drift, 050/051 pending) + 15 planned (Part A N0-N8 + Part B parallel-session additions B1-B7) (fiber lifecycle: shared pre-fold, fingerprint bundle cache, epoch stamp + fallback, per-domain incremental update, frozen-epoch build, concurrent stress gate, gated release-profile change, compile-time model row) per FIBER_LIFECYCLE_PLAN.md, 2 stubs (METHOD-016 head-to-head environment-blocked; METHOD-028 MPHF deferred — diminishing returns, documented); 2026-10-13 audit reconciled text to code (ARCHITECTURE as-built deltas A1-A6; parser.rs/phase4_bench.rs split for SPEC-022; Phase-7 methods reparented to real files; distrib/net/catalog/executor marked DEFERRED); clippy -D warnings clean; DIP audit clean (2 waived W-D1/W-D2 moot, no cross-crate arrows exist)
+status: 27/29 methods e2e_passed (unchanged); +22 built/verified nodes (+B8 durable segment descriptor) (+B4 versioned tombstones, +B14 zero-copy WAL replay) (METHOD-030 shared fiber module, 031 bundle cache, 038 TPCH wiring pending, 039 IMDb sectioned bundle, 040 zero-copy load, 041 tombstones pending, 042 shadow paging pending, 043 SoA pending, 044 skeleton drift, 050/051 pending) + 15 planned (Part A N0-N8 + Part B parallel-session additions B1-B7) (fiber lifecycle: shared pre-fold, fingerprint bundle cache, epoch stamp + fallback, per-domain incremental update, frozen-epoch build, concurrent stress gate, gated release-profile change, compile-time model row) per FIBER_LIFECYCLE_PLAN.md, 2 stubs (METHOD-016 head-to-head environment-blocked; METHOD-028 MPHF deferred — diminishing returns, documented); 2026-10-13 audit reconciled text to code (ARCHITECTURE as-built deltas A1-A6; parser.rs/phase4_bench.rs split for SPEC-022; Phase-7 methods reparented to real files; distrib/net/catalog/executor marked DEFERRED); clippy -D warnings clean; DIP audit clean (2 waived W-D1/W-D2 moot, no cross-crate arrows exist)
 
 requirements:
   - {id: REQ-001, text: "Rust-only engine plus language", spec_id: SPEC-001}
@@ -122,6 +122,8 @@ bounded_contexts:
       - {path: crates/sheaf-storage/src/lsp/colimit.rs, file_id: FILE-080, folder_id: FOLDER-005, responsibility: "background canonical projection", depends_on: [FILE-017, FILE-048]}
       - {path: crates/sheaf-kernel/src/components.rs, file_id: FILE-081, folder_id: FOLDER-009, responsibility: "b0 connected components via union-find", depends_on: []}
       - {path: crates/sheaf-kernel/src/solvers/chebyshev.rs, file_id: FILE-082, folder_id: FOLDER-009, responsibility: "Chebyshev Tikhonov filter", depends_on: [FILE-025]}
+      - {path: crates/sheaf-storage/src/bcsf/segment.rs, file_id: FILE-083, folder_id: FOLDER-002, responsibility: "durable segment descriptor: write/open a BCSF segment without the builder", depends_on: [FILE-017]}
+      - {path: crates/sheaf-storage/src/bin/segment_bench.rs, file_id: FILE-084, folder_id: FOLDER-002, responsibility: "B8 gate: segment round-trip exact, corrupt/truncated/alien rejected, restore identical", depends_on: [FILE-083]}
 
   - name: SheafKernel
     reason_separate: "owns linear algebra, never parses queries"

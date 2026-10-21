@@ -330,6 +330,33 @@ impl MemComplex {
         out
     }
 
+    /// B8: persist the current base as a DURABLE SEGMENT (self-describing
+    /// header + payload). The segment can later be opened without running
+    /// the builder - no in-memory reconstruction required.
+    pub fn persist_base_segment(
+        &self,
+        path: &Path,
+        generation: u64,
+        src_fingerprint: u64,
+    ) -> Result<(), String> {
+        let base = self.base.lock().unwrap().clone();
+        crate::bcsf::segment::write_segment(&base, path, generation, src_fingerprint)
+    }
+
+    /// B8: restore a persisted base segment - the segment OPENS without the
+    /// builder. The restored base starts with an empty tombstone table
+    /// (every cell alive) and a fresh generation.
+    pub fn restore_base_segment(&self, path: &Path) -> Result<usize, String> {
+        let reader = crate::bcsf::segment::open_segment(path)?;
+        let n = reader.len();
+        let live: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(true)).collect();
+        let death = Arc::new((0..n).map(|_| AtomicU64::new(0)).collect::<Vec<AtomicU64>>());
+        *self.base.lock().unwrap() = Arc::new(reader);
+        *self.base_live.lock().unwrap() = live;
+        *self.base_death.lock().unwrap() = death;
+        Ok(n)
+    }
+
     pub fn base_len(&self) -> usize {
         self.base.lock().unwrap().len()
     }
