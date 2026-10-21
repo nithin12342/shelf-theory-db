@@ -62,15 +62,17 @@ fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result
     let drained = mem.drain_batches(&ids);
 
     // New layout: live base cells in order, then live batch cells in order.
+    // B4: liveness comes from the versioned tombstones AS OF the snapshot's
+    // generation (no copied bitmap anywhere).
     let mut remap_base = vec![u32::MAX; snap.base.len()];
     let mut next: u32 = 0;
-    for (i, live) in snap.base_live.iter().enumerate() {
-        if *live {
-            remap_base[i] = next;
+    for (i, slot) in remap_base.iter_mut().enumerate() {
+        if snap.base_alive(i) {
+            *slot = next;
             next += 1;
         }
     }
-    let mut dropped = snap.base_live.iter().filter(|l| !**l).count();
+    let mut dropped = (0..snap.base.len()).filter(|i| !snap.base_alive(*i)).count();
     let mut builder = BcsfBuilder::new();
     // Chunked base merge: 32k-cell quanta with a yield between them so the
     // merge thread never holds a 50 MB memcpy burst against reader cores.
@@ -79,7 +81,9 @@ fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result
     let mut c = 0;
     while c < snap.base.len() {
         let e = (c + CHUNK).min(snap.base.len());
-        builder.extend_range(&snap.base, Some(&snap.base_live), &remap_base, c, e);
+        // B4: the remap table already encodes liveness (u32::MAX = dropped),
+        // so the merge copies no boolean mask at all.
+        builder.extend_range_remapped(&snap.base, &remap_base, c, e);
         c = e;
         std::thread::yield_now();
     }
@@ -93,16 +97,20 @@ fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result
                 return Err(format!("nested hypercell boundary at batch cell {} (Phase-2 scope)", l));
             }
         }
+        // B4: batch liveness from the versioned tombstones as of the
+        // snapshot's generation; the translation table doubles as the
+        // liveness map (u32::MAX = dropped).
         let mut trans = vec![u32::MAX; b.reader.len()];
-        for (l, live) in view.live.iter().enumerate() {
-            if *live {
-                trans[l] = next;
+        for (l, slot) in trans.iter_mut().enumerate() {
+            if snap.batch_alive(view, l) {
+                *slot = next;
                 next += 1;
             } else {
                 dropped += 1;
             }
         }
-        builder.extend_from_reader(&b.reader, Some(&view.live), &remap_base);
+        // The batch cell's BOUNDARY refers to base cells -> id map = remap_base.
+        builder.extend_from_reader_remapped_with(&b.reader, &trans, &remap_base);
         translations.insert((*sh, b.id), trans);
         std::thread::yield_now();
     }

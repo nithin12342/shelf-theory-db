@@ -207,3 +207,4 @@ when a live-fiber design exists.
 | **B1 delivered (2026-10-21)** | TPCH fiber bench: 4,200 ms pre-fold per run -> 24.8-54.5 ms cached (77-169x), totals exact | `fiber_join_bench` cached path PASS |
 | **B14 delivered (2026-10-21)** | WAL replay: copy 4.8 ms -> zero-copy 3.5 ms (20,000 frames identical); integrity unchanged | `wal_insert_bench` PASS |
 | **N3 delivered (2026-10-21)** | fiber bundle bound to a source fingerprint; stale source => rebuild, never a stale answer | `fiber_snap_bench` + `fiber_join_bench` PASS |
+| **B4 delivered (2026-10-21)** | snapshot creation 770.71 us -> 0.23 us (O(n)->O(1), 3,350x); no bool mask at merge time either; phase2 E2E PASS + adversarial 12/12 | `phase2_bench`, `adversarial` |

@@ -38,6 +38,11 @@ pub struct SealedBatch {
     pub id: u64,
     pub reader: Arc<BcsfReader>,
     pub live: Vec<AtomicBool>,
+    /// B4: versioned tombstones. 0 = alive, else the generation at which
+    /// the cell died. A snapshot at gen G sees the cell as alive iff
+    /// death_gen == 0 || death_gen > G - so a snapshot needs NO copy of
+    /// the liveness state (O(1) instead of O(ncells) per snapshot).
+    pub live_gen: Arc<Vec<AtomicU64>>,
 }
 
 struct Shard {
@@ -69,6 +74,9 @@ pub struct MemComplex {
     star: Vec<Mutex<HashMap<u64, Vec<CellRef>>>>,
     base: Mutex<Arc<BcsfReader>>,
     base_live: Mutex<Vec<AtomicBool>>,
+    /// B4: versioned tombstones for base cells (0 = alive). Held behind an
+    /// Arc so a snapshot SHARES the table (O(1)) instead of copying it.
+    base_death: Mutex<Arc<Vec<AtomicU64>>>,
     /// Base-resident hypercell index: face -> base hypercell indices.
     /// Rebuilt at every install (base is immutable between merges, so indices
     /// stay valid). Without this, deletes after a merge miss cascades whose
@@ -85,6 +93,7 @@ pub struct MemComplex {
 impl MemComplex {
     pub fn new(base: Arc<BcsfReader>, n_shards: usize, wal_path: &Path) -> std::io::Result<Self> {
         let base_live = (0..base.len()).map(|_| AtomicBool::new(true)).collect();
+        let base_death = Arc::new((0..base.len()).map(|_| AtomicU64::new(0)).collect::<Vec<AtomicU64>>());
         Ok(Self {
             shards: (0..n_shards)
                 .map(|_| {
@@ -94,6 +103,7 @@ impl MemComplex {
             star: (0..STAR_SHARDS).map(|_| Mutex::new(HashMap::new())).collect(),
             base: Mutex::new(base),
             base_live: Mutex::new(base_live),
+            base_death: Mutex::new(base_death),
             base_star: Mutex::new(HashMap::new()),
             wal: Mutex::new(WalWriter::create(wal_path)?),
             gen: AtomicU64::new(1),
@@ -116,7 +126,8 @@ impl MemComplex {
         }
         let finished = std::mem::take(&mut s.builder).finish_live();
         let live = (0..finished.len()).map(|_| AtomicBool::new(true)).collect();
-        s.sealed.push(SealedBatch { id: s.batch_id, reader: Arc::new(finished), live });
+        let live_gen = Arc::new((0..finished.len()).map(|_| AtomicU64::new(0)).collect::<Vec<AtomicU64>>());
+        s.sealed.push(SealedBatch { id: s.batch_id, reader: Arc::new(finished), live, live_gen });
         s.batch_id += 1;
         s.open = 0;
         self.gen.fetch_add(1, Ordering::AcqRel);
@@ -193,14 +204,21 @@ impl MemComplex {
         let mut frame = vec![2u8];
         frame.extend_from_slice(&(face as u64).to_le_bytes());
         self.wal.lock().unwrap().append(&frame).unwrap();
+        // B4: the delete is stamped with the generation that INCLUDES it, so
+        // snapshots older than that generation still see the cell as alive
+        // (repeatable reads) while newer ones see it dead.
+        let death_gen = self.gen.fetch_add(1, Ordering::AcqRel) + 1;
         self.base_live.lock().unwrap()[face].store(false, Ordering::Release);
+        self.base_death.lock().unwrap()[face].store(death_gen, Ordering::Release);
         // Base-resident cascade: hypercells merged earlier lost their Star
         // entries at install; base_star covers them (lock order: base_star
         // -> base_live, never inverted anywhere).
         if let Some(v) = self.base_star.lock().unwrap().get(&(face as u64)) {
             let live = self.base_live.lock().unwrap();
+            let death = self.base_death.lock().unwrap();
             for idx in v {
                 live[*idx as usize].store(false, Ordering::Release);
+                death[*idx as usize].store(death_gen, Ordering::Release);
             }
         }
         let refs: Vec<CellRef> = self.star[face % STAR_SHARDS]
@@ -224,16 +242,18 @@ impl MemComplex {
                 }
                 if let Some(b) = s.sealed.iter().find(|b| b.id == r.batch) {
                     b.live[r.local as usize].store(false, Ordering::Release);
+                    b.live_gen[r.local as usize].store(death_gen, Ordering::Release);
                 } else if let Some(v) = self.merged_map.lock().unwrap().get(&(sh, r.batch)) {
                     // Already merged into base: tombstone the new home.
                     let nb = v[r.local as usize];
                     if nb != u32::MAX {
                         self.base_live.lock().unwrap()[nb as usize].store(false, Ordering::Release);
+                        self.base_death.lock().unwrap()[nb as usize]
+                            .store(death_gen, Ordering::Release);
                     }
                 }
             }
         }
-        self.gen.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Repeatable-read snapshot: immutable Arcs + copied live bitsets.
@@ -246,7 +266,10 @@ impl MemComplex {
         Snapshot::pin(&mut reg, gen);
         drop(reg);
         let base = self.base.lock().unwrap().clone();
-        let base_live = self.base_live.lock().unwrap().iter().map(|a| a.load(Ordering::Acquire)).collect();
+        // B4: NO liveness copy. The snapshot shares the versioned tombstone
+        // tables and resolves liveness against its own generation, so
+        // snapshot creation is O(1) instead of O(ncells).
+        let base_death = self.base_death.lock().unwrap().clone();
         let mut batches = Vec::new();
         for (sh, s) in self.shards.iter().enumerate() {
             let s = s.lock().unwrap();
@@ -255,11 +278,11 @@ impl MemComplex {
                     shard: sh,
                     id: b.id,
                     reader: b.reader.clone(),
-                    live: b.live.iter().map(|a| a.load(Ordering::Acquire)).collect(),
+                    live_gen: b.live_gen.clone(),
                 });
             }
         }
-        Snapshot::new(gen, base, base_live, batches, self.registry.clone())
+        Snapshot::new(gen, base, base_death, batches, self.registry.clone())
     }
 
     /// Seal every open tail without draining (end-of-test fence).
@@ -385,8 +408,13 @@ impl MemComplex {
         }
         let live: Vec<AtomicBool> = new_base_live.into_iter().map(AtomicBool::new).collect();
         assert_eq!(live.len(), new_base.len());
+        // B4: the merged base starts with an empty tombstone table (dead cells
+        // were skipped during the merge); deletes that land after the merge
+        // stamp this table with a fresh generation.
+        let death = Arc::new((0..new_base.len()).map(|_| AtomicU64::new(0)).collect::<Vec<AtomicU64>>());
         *self.base.lock().unwrap() = Arc::new(new_base);
         *self.base_live.lock().unwrap() = live;
+        *self.base_death.lock().unwrap() = death;
         *self.base_star.lock().unwrap() = rebuilt;
         self.gen.fetch_add(1, Ordering::AcqRel);
         Ok(())

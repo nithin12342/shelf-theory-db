@@ -64,10 +64,14 @@ fn dump_snap(snap: &Snap) -> BTreeSet<(u64, Vec<u64>)> {
             }
         }
     };
-    walk(&snap.base, &snap.base_live, &snap.base);
+    // B4: liveness is resolved from the versioned tombstones as of the
+    // snapshot's generation (no copied bitmap).
+    let base_live: Vec<bool> = (0..snap.base.len()).map(|i| snap.base_alive(i)).collect();
+    walk(&snap.base, &base_live, &snap.base);
     for b in &snap.batches {
         let base = snap.base.clone();
-        walk(&b.reader, &b.live, &base);
+        let live: Vec<bool> = (0..b.reader.len()).map(|l| snap.batch_alive(b, l)).collect();
+        walk(&b.reader, &live, &base);
     }
     out
 }
@@ -83,11 +87,9 @@ fn model_set(m: &Model) -> BTreeSet<(u64, Vec<u64>)> {
 // ids go stale across dropping merges; translate immediately before use).
 fn face_map(mem: &MemComplex) -> HashMap<u64, usize> {
     let snap = mem.snapshot();
-    snap.base_live
-        .iter()
-        .enumerate()
-        .filter(|(i, lv)| **lv && snap.base.dims[*i] == 0)
-        .map(|(i, _)| (orig_of(snap.base.discrete(i)), i))
+    (0..snap.base.len())
+        .filter(|i| snap.base_alive(*i) && snap.base.dims[*i] == 0)
+        .map(|i| (orig_of(snap.base.discrete(i)), i))
         .collect()
 }
 // Diff-reporting equality (caller reports the canonical adv_ line).
@@ -108,12 +110,10 @@ fn assert_eq_sets(name: &'static str, engine: &BTreeSet<(u64, Vec<u64>)>, model:
 // (violated iff a tombstone was lost on ANY path). Returns violations.
 fn check_integrity(mem: &MemComplex) -> usize {
     let snap = mem.snapshot();
-    let live: HashSet<u64> = snap
-        .base_live
-        .iter()
-        .enumerate()
-        .filter(|(i, lv)| **lv && snap.base.dims[*i] == 0)
-        .map(|(i, _)| orig_of(snap.base.discrete(i)))
+    // B4: liveness from the versioned tombstones (no copied bitmap).
+    let live: HashSet<u64> = (0..snap.base.len())
+        .filter(|i| snap.base_alive(*i) && snap.base.dims[*i] == 0)
+        .map(|i| orig_of(snap.base.discrete(i)))
         .collect();
     let mut bad = 0;
     let mut walk = |r: &Arc<Reader>, lv: &[bool]| {
@@ -125,9 +125,11 @@ fn check_integrity(mem: &MemComplex) -> usize {
             }
         }
     };
-    walk(&snap.base, &snap.base_live);
+    let base_live: Vec<bool> = (0..snap.base.len()).map(|i| snap.base_alive(i)).collect();
+    walk(&snap.base, &base_live);
     for b in &snap.batches {
-        walk(&b.reader, &b.live);
+        let live: Vec<bool> = (0..b.reader.len()).map(|l| snap.batch_alive(b, l)).collect();
+        walk(&b.reader, &live);
     }
     bad
 }

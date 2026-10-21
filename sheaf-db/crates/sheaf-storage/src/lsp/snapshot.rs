@@ -12,13 +12,15 @@ pub struct BatchView {
     pub shard: usize,
     pub id: u64,
     pub reader: Arc<BcsfReader>,
-    pub live: Vec<bool>,
+    /// B4: versioned tombstones (0 = alive, else death generation).
+    pub live_gen: Arc<Vec<std::sync::atomic::AtomicU64>>,
 }
 
 pub struct Snapshot {
     pub gen: u64,
     pub base: Arc<BcsfReader>,
-    pub base_live: Vec<bool>,
+    /// B4: versioned tombstones for base cells (0 = alive).
+    pub base_death: Arc<Vec<std::sync::atomic::AtomicU64>>,
     pub batches: Vec<BatchView>,
     registry: Arc<Mutex<HashMap<u64, usize>>>,
 }
@@ -32,11 +34,36 @@ impl Snapshot {
     pub fn new(
         gen: u64,
         base: Arc<BcsfReader>,
-        base_live: Vec<bool>,
+        base_death: Arc<Vec<std::sync::atomic::AtomicU64>>,
         batches: Vec<BatchView>,
         registry: Arc<Mutex<HashMap<u64, usize>>>,
     ) -> Self {
-        Self { gen, base, base_live, batches, registry }
+        Self { gen, base, base_death, batches, registry }
+    }
+
+    /// B4: liveness of a base cell AS OF this snapshot's generation.
+    /// A cell deleted after the snapshot was taken stays alive for it
+    /// (repeatable reads), without any per-snapshot copy of the liveness
+    /// state. O(1) per cell.
+    pub fn base_alive(&self, cell: usize) -> bool {
+        match self.base_death.get(cell) {
+            Some(g) => {
+                let d = g.load(std::sync::atomic::Ordering::Acquire);
+                d == 0 || d > self.gen
+            }
+            None => false,
+        }
+    }
+
+    /// B4: liveness of a batch cell AS OF this snapshot's generation.
+    pub fn batch_alive(&self, view: &BatchView, cell: usize) -> bool {
+        match view.live_gen.get(cell) {
+            Some(g) => {
+                let d = g.load(std::sync::atomic::Ordering::Acquire);
+                d == 0 || d > self.gen
+            }
+            None => false,
+        }
     }
 
     /// Register a generation pin. The caller MUST hold the registry lock

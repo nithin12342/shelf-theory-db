@@ -367,7 +367,11 @@ fn main() {
                 n2 += 1;
                 for id in snap.base.boundary(c) {
                     assert_eq!(snap.base.dims[*id as usize], 0, "hypercell references non-0-cell");
-                    assert!(snap.base_live[*id as usize], "hypercell references dead face");
+                    // B4: liveness from the versioned tombstones.
+                    assert!(
+                        snap.base_alive(*id as usize),
+                        "hypercell references dead face"
+                    );
                 }
             }
             d => panic!("unexpected dim {}", d),
@@ -484,5 +488,19 @@ fn main() {
     if !(g_write && g_thr && g_commit) {
         std::process::exit(1);
     }
+    // B4: snapshot creation cost. Before this change every snapshot
+    // COPIED the liveness bitmap (O(ncells)); now a snapshot shares the
+    // versioned tombstone tables and resolves liveness against its own
+    // generation (O(1) per snapshot).
+    {
+        let t_snap = Instant::now();
+        let reps = 200usize;
+        for _ in 0..reps {
+            let _ = mem.snapshot();
+        }
+        let per_snap_us = t_snap.elapsed().as_secs_f64() * 1e6 / reps as f64;
+        println!("snapshot_cost: base_cells={} per_snapshot_us={per_snap_us:.2}", mem.base_len());
+    }
+
     println!("PHASE2 E2E: PASS");
 }

@@ -106,6 +106,74 @@ impl BcsfBuilder {
             }
         }
     }
+    /// B4: merge directly from a REMAP table (u32::MAX = dropped cell).
+    /// The remap already encodes liveness, so no boolean mask is
+    /// materialized - the merge does O(cells) work with zero extra copies
+    /// (the old path copied a bool mask per merge AND per snapshot).
+    pub fn extend_range_remapped(
+        &mut self,
+        reader: &BcsfReader,
+        remap: &[u32],
+        start: usize,
+        end: usize,
+    ) {
+        self.extend_range_remapped_with(reader, remap, remap, start, end)
+    }
+
+    /// B4: merge with TWO maps - `cell_map` maps the reader's own cells to
+    /// their new indices (u32::MAX = dropped), `id_map` maps the BOUNDARY
+    /// ids to their new indices. They differ for batch cells: a batch
+    /// cell's boundary refers to BASE cells, so its id map is the base
+    /// remap, not the batch translation.
+    pub fn extend_range_remapped_with(
+        &mut self,
+        reader: &BcsfReader,
+        cell_map: &[u32],
+        id_map: &[u32],
+        start: usize,
+        end: usize,
+    ) {
+        let n = reader.len();
+        assert!(start <= end && end <= n, "merge range out of bounds");
+        assert_eq!(cell_map.len(), n, "cell map must cover every source cell");
+        for (cell, &new_idx) in cell_map.iter().enumerate().take(end).skip(start) {
+            if new_idx == u32::MAX {
+                continue; // dropped (tombstoned) cell
+            }
+            self.dims.push(reader.dims[cell]);
+            self.indices.extend(
+                reader.boundary(cell).iter().map(|id| {
+                    *id_map.get(*id as usize).expect("boundary id outside remap space") as u64
+                }),
+            );
+            self.offsets.push(u32::try_from(self.indices.len()).expect("BCSF indices overflow u32"));
+            self.stalks.extend_from_slice(reader.stalk(cell));
+            self.stalk_offsets.push(u32::try_from(self.stalks.len()).expect("BCSF stalks overflow u32"));
+            let m = reader.morph_weights(cell);
+            if !m.is_empty() {
+                self.morph_cells.push(new_idx);
+                self.morphs.extend_from_slice(m);
+                self.morph_offsets.push(u32::try_from(self.morphs.len()).expect("BCSF morphs overflow u32"));
+            }
+            self.discrete.extend_from_slice(reader.discrete(cell));
+        }
+    }
+
+    /// B4: bulk merge from a remap table (whole reader).
+    pub fn extend_from_reader_remapped(&mut self, reader: &BcsfReader, remap: &[u32]) {
+        self.extend_range_remapped(reader, remap, 0, reader.len());
+    }
+
+    /// B4: bulk merge with separate cell map and boundary-id map.
+    pub fn extend_from_reader_remapped_with(
+        &mut self,
+        reader: &BcsfReader,
+        cell_map: &[u32],
+        id_map: &[u32],
+    ) {
+        self.extend_range_remapped_with(reader, cell_map, id_map, 0, reader.len());
+    }
+
     pub fn len_before_finish(&self) -> usize {
         self.dims.len()
     }
