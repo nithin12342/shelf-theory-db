@@ -189,7 +189,7 @@ fn build() -> (Fibers, Segs) {
 /// environment-independent: the absolute cost of a run depends on the page
 /// cache and the CPU clock, the RATIO does not.
 fn reference_deserialize(bytes: &[u8]) -> (Fibers, Segs) {
-    let payload = &bytes[24..];
+    let payload = &bytes[fiber_snapshot::HEADER_LEN..];
     let mut o = 0usize;
     let nf = u64::from_le_bytes(payload[o..o + 8].try_into().unwrap()) as usize;
     o += 8;
@@ -227,7 +227,7 @@ fn reference_full_path(bytes: &[u8]) -> (f64, f64) {
     // integrity check (that mistake made the old path look 2x faster
     // than it is).
     let t1 = Instant::now();
-    let old_crc = sheaf_storage::lsp::wal::crc32(&bytes[24..]);
+    let old_crc = sheaf_storage::lsp::wal::crc32(&bytes[fiber_snapshot::HEADER_LEN..]);
     std::hint::black_box(old_crc);
     let crc_ms = t1.elapsed().as_secs_f64() * 1e3;
     // Old per-element deserialize.
@@ -383,10 +383,10 @@ fn main() {
     println!("gate_snap_source_fresh=PASS (src_fp={src_fp})");
     // Which CRC path actually runs? (hw vs software fallback) and how fast.
     let t_c = Instant::now();
-    let c_hw = sheaf_storage::lsp::ring_wal::crc_hw(&bundle.as_bytes()[24..]);
+    let c_hw = sheaf_storage::lsp::ring_wal::crc_hw(&bundle.as_bytes()[fiber_snapshot::HEADER_LEN..]);
     let hw_ms = t_c.elapsed().as_secs_f64() * 1e3;
     let t_s = Instant::now();
-    let c_soft = sheaf_storage::lsp::ring_wal::crc32c_soft(&bundle.as_bytes()[24..]);
+    let c_soft = sheaf_storage::lsp::ring_wal::crc32c_soft(&bundle.as_bytes()[fiber_snapshot::HEADER_LEN..]);
     let soft_ms = t_s.elapsed().as_secs_f64() * 1e3;
     println!(
         "crc_paths: hw={:.1}ms soft={:.1}ms agree={} (hw_is_soft={})",

@@ -91,3 +91,29 @@ Exhaustive bottleneck probing (bottleneck_probe, results in results/bottleneck.j
 **Method discipline enforced by the gates (all recorded, none hidden):** same-run ratios instead of cross-run baselines; build and query reported separately everywhere; a cached bundle counted as an INDEX BUILD (B13 gate policy); every table row names its dataset; Rust-first (the IMDb ETL moved into `imdb_scylla_prep.rs`; Python kept only for CQL transport, since no Rust CQL driver is allowed without a new crate).
 
 **Production shape (unchanged, now evidenced):** in-process only - the ns-class wins (10.5 ns) die over a socket - with scale-out by partitioning into multiple copies (Phase-6/7 covers, ghost replicas, CRDT gluing, zero-hop routing).
+
+## 13. Fiber lifecycle wave 2 — the remaining plan nodes (2026-10-21)
+
+Rows = node, Columns = the capability and the number that proves it.
+
+| Node | Capability | Proof |
+|---|---|---|
+| B4 | Versioned tombstones: a snapshot copies NO liveness state | snapshot creation 770.71 us -> **0.23 us** (O(n) -> O(1)) |
+| B5 | Shadow paging: the merge copies only the delta when nothing is dropped | shadow merge **1 ms** vs copy **6 ms**; chained lookup 5.57 ns (flat 5.86 ns) |
+| B6 | SoA is the primary stalk layout: column reads are views | transpose allocates **0 bytes** (was 48 MB); scan 7.9 -> 5.6 ms |
+| B8 | Durable segment descriptor: a segment opens without the builder | 2,500 cells round-trip identical; corrupt/truncated/alien rejected |
+| B9 | The value->cells index survives process exit | a 2nd process reloads and re-serializes it byte-identically; scan parity |
+| B10 | The L3 domain plan + ghost map survive process exit | the reloaded map still satisfies `domains_fit_l3` + `ghosts_cover_boundaries` |
+| B11 | A table opens BY NAME and the schema version gates every plan | a v5 plan against a v4 table is refused |
+| B12 | A changed input rewrites only its section | 260 KB re-encoded, 780 KB copied (of 1.04 MB) |
+| B14 | Zero-copy WAL replay | 4.8 ms -> 3.5 ms, 20,000 frames identical |
+| N3 | A fiber built at epoch E refuses to answer at E+1 | mismatch -> refused; the scan fallback matches exactly |
+| N4 | Per-domain incremental fiber update | 1,000 writes -> 2 re-sorts (the dirty domains) |
+| N5 | The compactor exposes the frozen epoch of each merge | a concurrent build is byte-equal to a quiet-box build |
+| N6 | The fiber lifecycle gate | 10,000 mixed ops, 0 mismatches, lag <= 2 generations |
+
+Invariants that must hold after any change in this area: the reader's accessors go through
+`resolve()` (a chained reader has empty slabs); a delta is a FRAGMENT (its boundary ids point at
+the base) and is validated with `validate_fragment`; the morph-cell index is the builder's OWN
+index; a stale bundle is rebuilt, never answered from; a stale fiber falls back to a scan, and the
+scan must return the same aggregate.
