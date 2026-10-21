@@ -144,7 +144,7 @@ fn main() {
     // 2-hop neighborhood sizes for 200 sampled nodes (adjacency from BCSF).
     let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
     for cell in 0..reader.len() {
-        if reader.dims[cell] == 1 {
+        if reader.dim(cell) == 1 {
             let b = reader.boundary(cell);
             adj.entry(b[0] as usize).or_default().push(b[1] as usize);
             adj.entry(b[1] as usize).or_default().push(b[0] as usize);

@@ -104,7 +104,7 @@ fn noisy_fixture() -> (Vec<CoboundaryOp>, Vec<f32>, usize, usize, f64) {
     println!("debug_boundary0={:?}", r.boundary(N));
     let mut ops = Vec::with_capacity(NH);
     for cell in N..N + NH {
-        assert_eq!(r.dims[cell], 2);
+        assert_eq!(r.dim(cell), 2);
         let faces: Vec<u32> = r.boundary(cell).iter().map(|id| *id as u32).collect();
         assert_eq!(faces.len(), 4);
         let classes: Vec<u64> = faces.iter().map(|f| class_of(r.discrete(*f as usize))).collect();

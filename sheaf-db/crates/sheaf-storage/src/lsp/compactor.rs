@@ -9,6 +9,7 @@ use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 use crate::bcsf::builder::BcsfBuilder;
+use crate::bcsf::reader::BcsfReader;
 use super::fiber_epoch::{base_fingerprint, Epoch};
 use super::mem_complex::MemComplex;
 
@@ -58,6 +59,11 @@ impl Compactor {
     }
 }
 
+/// B5: how many shadow-paging levels may stack before the merge flattens
+/// the chain (an LSM-style level count - the read path never chases an
+/// unbounded chain).
+const MAX_CHAIN_DEPTH: usize = 4;
+
 fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result<MergeStats, String> {
     let t0 = Instant::now();
     // Pin the read set first: everything sealed at snapshot time is merged;
@@ -79,18 +85,27 @@ fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result
     }
     let mut dropped = (0..snap.base.len()).filter(|i| !snap.base_alive(*i)).count();
     let mut builder = BcsfBuilder::new();
+    // B5 (shadow paging): when the merge drops NOTHING, the base is NOT
+    // copied. The new segment is a CHAIN (base ⊕ remap ⊕ delta): the old
+    // base stays as it is and only the delta (the newly merged cells) is
+    // written. The merge cost becomes O(delta) instead of O(n).
+    // The chain depth is bounded, so the read path never chases an
+    // unbounded chain.
+    let shadow = dropped == 0 && snap.base.chain_depth() < MAX_CHAIN_DEPTH;
     // Chunked base merge: 32k-cell quanta with a yield between them so the
     // merge thread never holds a 50 MB memcpy burst against reader cores.
     // Batches stay one extend call each (already ~1k-cell quanta).
     const CHUNK: usize = 32_768;
-    let mut c = 0;
-    while c < snap.base.len() {
-        let e = (c + CHUNK).min(snap.base.len());
-        // B4: the remap table already encodes liveness (u32::MAX = dropped),
-        // so the merge copies no boolean mask at all.
-        builder.extend_range_remapped(&snap.base, &remap_base, c, e);
-        c = e;
-        std::thread::yield_now();
+    if !shadow {
+        let mut c = 0;
+        while c < snap.base.len() {
+            let e = (c + CHUNK).min(snap.base.len());
+            // B4: the remap table already encodes liveness (u32::MAX =
+            // dropped), so the merge copies no boolean mask at all.
+            builder.extend_range_remapped(&snap.base, &remap_base, c, e);
+            c = e;
+            std::thread::yield_now();
+        }
     }
 
     let mut translations: HashMap<(usize, u64), Vec<u32>> = HashMap::new();
@@ -119,7 +134,16 @@ fn merge_once(mem: &MemComplex, pinned: bool, pin_core: Option<usize>) -> Result
         translations.insert((*sh, b.id), trans);
         std::thread::yield_now();
     }
-    let new_base = builder.finish();
+    // B5: the delta is a FRAGMENT (its boundary ids point at base cells).
+    let delta = builder.finish_fragment();
+    let new_base: BcsfReader = if shadow {
+        // the remap is the identity (nothing was dropped): the base keeps
+        // its cell ids, so the delta's boundary ids stay valid.
+        let remap: Vec<u32> = (0..snap.base.len() as u32).collect();
+        BcsfReader::chained(snap.base.clone(), Arc::new(delta), remap)
+    } else {
+        delta
+    };
     new_base.validate().map_err(|e| format!("merged base invalid: {}", e))?;
     // N5: freeze the epoch of this merge: the snapshot's generation plus
     // the fingerprint of the base it produced.

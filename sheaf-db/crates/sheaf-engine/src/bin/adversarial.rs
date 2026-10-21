@@ -57,7 +57,7 @@ fn dump_snap(snap: &Snap) -> BTreeSet<(u64, Vec<u64>)> {
     let mut out = BTreeSet::new();
     let mut walk = |r: &Arc<Reader>, live: &[bool], res: &Reader| {
         for (i, &lv) in live.iter().enumerate() {
-            if lv && r.dims[i] == 2 {
+            if lv && r.dim(i) == 2 {
                 let mut fs: Vec<u64> = r.boundary(i).iter().map(|id| orig_of(res.discrete(*id as usize))).collect();
                 fs.sort_unstable();
                 out.insert((orig_of(r.discrete(i)), fs));
@@ -88,7 +88,7 @@ fn model_set(m: &Model) -> BTreeSet<(u64, Vec<u64>)> {
 fn face_map(mem: &MemComplex) -> HashMap<u64, usize> {
     let snap = mem.snapshot();
     (0..snap.base.len())
-        .filter(|i| snap.base_alive(*i) && snap.base.dims[*i] == 0)
+        .filter(|i| snap.base_alive(*i) && snap.base.dim(*i) == 0)
         .map(|i| (orig_of(snap.base.discrete(i)), i))
         .collect()
 }
@@ -112,13 +112,13 @@ fn check_integrity(mem: &MemComplex) -> usize {
     let snap = mem.snapshot();
     // B4: liveness from the versioned tombstones (no copied bitmap).
     let live: HashSet<u64> = (0..snap.base.len())
-        .filter(|i| snap.base_alive(*i) && snap.base.dims[*i] == 0)
+        .filter(|i| snap.base_alive(*i) && snap.base.dim(*i) == 0)
         .map(|i| orig_of(snap.base.discrete(i)))
         .collect();
     let mut bad = 0;
     let mut walk = |r: &Arc<Reader>, lv: &[bool]| {
         for (i, &l) in lv.iter().enumerate() {
-            if l && r.dims[i] == 2 {
+            if l && r.dim(i) == 2 {
                 for id in r.boundary(i) {
                     bad += !live.contains(&orig_of(snap.base.discrete(*id as usize))) as usize;
                 }

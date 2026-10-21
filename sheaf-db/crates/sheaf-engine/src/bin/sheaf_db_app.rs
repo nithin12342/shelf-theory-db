@@ -186,7 +186,7 @@ fn main() {
     // Phase 4: Match + solve
     let mut matched: Vec<MatchRow> = Vec::new();
     for cell in 0..reader.len() {
-        if reader.dims[cell] != 2 {
+        if reader.dim(cell) != 2 {
             continue;
         }
         let hclass = u64::from_le_bytes(reader.discrete(cell)[..8].try_into().unwrap());
@@ -204,7 +204,7 @@ fn main() {
         for ((var, typ), gid) in query_ast.overs.iter().zip(bnd.iter()) {
             let fclass = u64::from_le_bytes(reader.discrete(*gid as usize)[..8].try_into().unwrap());
             let ftype = class_of.iter().find(|(_, c)| **c == fclass).map(|(t, _)| t.clone()).unwrap();
-            if ftype != *typ || reader.dims[*gid as usize] != 0 {
+            if ftype != *typ || reader.dim(*gid as usize) != 0 {
                 ok = false;
                 break;
             }

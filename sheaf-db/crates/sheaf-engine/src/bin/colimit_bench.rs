@@ -41,13 +41,13 @@ fn main() {
     let mut ok = true;
     let mut total = 0f64;
     for cell in 0..reader.len() {
-        if reader.dims[cell] == 2 {
+        if reader.dim(cell) == 2 {
             let b = reader.boundary(cell);
             if b.len() != 2 {
                 ok = false;
             }
             for f in b {
-                if reader.dims[*f as usize] != 0 {
+                if reader.dim(*f as usize) != 0 {
                     ok = false;
                 }
             }
@@ -69,7 +69,7 @@ fn main() {
     let r2 = b2.finish();
     let mut total2 = 0f64;
     for cell in 0..r2.len() {
-        if r2.dims[cell] == 2 {
+        if r2.dim(cell) == 2 {
             total2 += r2.stalk(cell)[0] as f64;
         }
     }

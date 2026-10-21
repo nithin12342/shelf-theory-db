@@ -116,7 +116,7 @@ fn main() {
     let mut cust_orders: HashMap<usize, Vec<usize>> = HashMap::with_capacity(150_000);
     let mut order_lines: HashMap<usize, Vec<usize>> = HashMap::with_capacity(600_000);
     for cell in 0..reader.len() {
-        match reader.dims[cell] {
+        match reader.dim(cell) {
             1 => {
                 let b = reader.boundary(cell);
                 cust_orders.entry(b[0] as usize).or_default().push(b[1] as usize);

@@ -87,7 +87,7 @@ impl BcsfBuilder {
         for cell in start..end {
             if live.map(|l| l[cell]).unwrap_or(true) {
                 let new_idx = u32::try_from(self.dims.len()).expect("BCSF cell overflow u32");
-                self.dims.push(reader.dims[cell]);
+                self.dims.push(reader.dim(cell));
                 self.indices.extend(
                     reader.boundary(cell).iter().map(|id| {
                         *remap.get(*id as usize).expect("boundary id outside remap space") as u64
@@ -140,7 +140,7 @@ impl BcsfBuilder {
             if new_idx == u32::MAX {
                 continue; // dropped (tombstoned) cell
             }
-            self.dims.push(reader.dims[cell]);
+            self.dims.push(reader.dim(cell));
             self.indices.extend(
                 reader.boundary(cell).iter().map(|id| {
                     *id_map.get(*id as usize).expect("boundary id outside remap space") as u64
@@ -151,7 +151,8 @@ impl BcsfBuilder {
             self.stalk_offsets.push(u32::try_from(self.stalks.len()).expect("BCSF stalks overflow u32"));
             let m = reader.morph_weights(cell);
             if !m.is_empty() {
-                self.morph_cells.push(new_idx);
+                // the morph cell must point at a cell of THIS reader
+                self.morph_cells.push((self.dims.len() - 1) as u32);
                 self.morphs.extend_from_slice(m);
                 self.morph_offsets.push(u32::try_from(self.morphs.len()).expect("BCSF morphs overflow u32"));
             }
@@ -178,6 +179,10 @@ impl BcsfBuilder {
         self.dims.len()
     }
     pub fn finish(self) -> BcsfReader {
+        self.finish_inner(true)
+    }
+
+    pub fn finish_fragment(self) -> BcsfReader {
         self.finish_inner(true)
     }
     /// Seal path (METHOD-012): no shrink_to_fit — the 9-vec realloc memcpy
@@ -213,6 +218,7 @@ impl BcsfBuilder {
                 morphs: self.morphs,
                 discrete: self.discrete,
             },
+            chain: None,
         };
         debug_assert!(r.validate().is_ok(), "BCSF structural invariant broken: {:?}", r.validate().err());
         r

@@ -44,7 +44,7 @@ fn same(a: &BcsfReader, b: &BcsfReader) -> bool {
         return false;
     }
     for i in 0..a.len() {
-        if a.dims[i] != b.dims[i]
+        if a.dim(i) != b.dim(i)
             || a.boundary(i) != b.boundary(i)
             || a.stalk(i) != b.stalk(i)
             || a.morph_weights(i) != b.morph_weights(i)
@@ -140,7 +140,7 @@ fn main() {
     let mut base_equal = snap_a.base.len() == snap_b.base.len();
     if base_equal {
         for i in 0..snap_a.base.len() {
-            if snap_a.base.dims[i] != snap_b.base.dims[i]
+            if snap_a.base.dim(i) != snap_b.base.dim(i)
                 || snap_a.base.boundary(i) != snap_b.base.boundary(i)
                 || snap_a.base.stalk(i) != snap_b.base.stalk(i)
                 || snap_a.base.discrete(i) != snap_b.base.discrete(i)

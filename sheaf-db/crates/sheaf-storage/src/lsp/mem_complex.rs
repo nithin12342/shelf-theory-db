@@ -396,9 +396,9 @@ impl MemComplex {
     ) -> Result<(), String> {
         let mut rebuilt: HashMap<u64, Vec<u32>> = HashMap::new();
         for cell in 0..new_base.len() {
-            if new_base.dims[cell] == 2 {
+            if new_base.dim(cell) == 2 {
                 for id in new_base.boundary(cell) {
-                    if new_base.dims[*id as usize] != 0 {
+                    if new_base.dim(*id as usize) != 0 {
                         return Err(format!("nested hypercell at base cell {} (two-level scope)", cell));
                     }
                     rebuilt.entry(*id).or_default().push(cell as u32);

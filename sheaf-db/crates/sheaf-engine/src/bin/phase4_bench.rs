@@ -266,7 +266,7 @@ fn main() {
     type MatchRow = (usize, HashMap<String, HashMap<String, Lit>>, Vec<usize>);
     let mut matched: Vec<MatchRow> = Vec::new();
     for cell in 0..reader.len() {
-        if reader.dims[cell] != 2 {
+        if reader.dim(cell) != 2 {
             continue;
         }
         // Identify hypercell type by discrete class.
@@ -286,7 +286,7 @@ fn main() {
             // Resolve gid back to (type, id) via discrete class + position.
             let fclass = u64::from_le_bytes(reader.discrete(*gid as usize)[..8].try_into().unwrap());
             let ftype = class_of.iter().find(|(_, c)| **c == fclass).map(|(t, _)| t.clone()).unwrap();
-            if ftype != *typ || reader.dims[*gid as usize] != 0 {
+            if ftype != *typ || reader.dim(*gid as usize) != 0 {
                 ok = false;
                 break;
             }

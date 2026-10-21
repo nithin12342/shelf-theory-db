@@ -42,6 +42,12 @@ fn put_part(h: &mut Vec<u8>, p: Part) {
 
 /// Write a reader to a durable segment file.
 pub fn write_segment(reader: &BcsfReader, path: &Path, generation: u64, src_fingerprint: u64) -> Result<(), String> {
+    // B5: a shadow-paging chain has no flat slabs of its own - flatten it
+    // (the segment file is a flat format).
+    if reader.chain.is_some() {
+        let flat = reader.flatten();
+        return write_segment(&flat, path, generation, src_fingerprint);
+    }
     let mut header: Vec<u8> = Vec::with_capacity(HEADER_LEN);
     header.extend_from_slice(&SEGMENT_MAGIC.to_le_bytes());
     header.extend_from_slice(&SEGMENT_FMT_VER.to_le_bytes());
@@ -174,7 +180,7 @@ pub fn open_segment(path: &Path) -> Result<BcsfReader, String> {
         discrete: slice(parts[5])?.to_vec(),
     };
     let dims = slice(parts[8])?.to_vec();
-    let reader = BcsfReader { dims, offsets, indices, arena };
+    let reader = BcsfReader { dims, offsets, indices, arena, chain: None };
     if reader.len() != ncells {
         return Err(format!("{path:?}: cell count mismatch"));
     }

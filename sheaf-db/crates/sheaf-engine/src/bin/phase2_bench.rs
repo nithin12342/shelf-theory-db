@@ -361,12 +361,12 @@ fn main() {
     snap.base.validate().expect("merged base invalid");
     let (mut n0, mut n2) = (0, 0);
     for c in 0..snap.base.len() {
-        match snap.base.dims[c] {
+        match snap.base.dim(c) {
             0 => n0 += 1,
             2 => {
                 n2 += 1;
                 for id in snap.base.boundary(c) {
-                    assert_eq!(snap.base.dims[*id as usize], 0, "hypercell references non-0-cell");
+                    assert_eq!(snap.base.dim(*id as usize), 0, "hypercell references non-0-cell");
                     // B4: liveness from the versioned tombstones.
                     assert!(
                         snap.base_alive(*id as usize),
