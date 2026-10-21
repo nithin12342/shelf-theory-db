@@ -11,23 +11,33 @@
 
 *Run 2026-10-21 (post wave-2: B4/B5/B6/B8–B12/B14/N3–N6). Truth for every engine: count 44,906 / votes 294,435,444 / avg 8.145506168 — each engine is gated on the same values. The comparison is QUERY vs QUERY; each engine's one-time load is its own column.*
 
-| Category | Engine | Query (ms) | One-time load (s) | Speed vs ShelfDB query | Gate |
-|---|---|---|---|---|---|
-| Sheaf | **ShelfDB** (fiber bundle) | **198** | 164.8 s build (once; bundle reused) | 1x (reference) | PASS |
+*Mixed-run warning: the DuckDB and PostgreSQL rows are the **recorded 2026-10-20** baseline (the JOB-family re-run is blocked on a PostgreSQL shared-memory failure on this box); every other row is from the **2026-10-21** run. The Q2/Q3 margins in section 2 are therefore cross-run and must not be quoted as same-run ratios until the re-run lands.*
 
-*ShelfDB's per-run extra: the two sections Q1 needs are demand-loaded from the cached bundle = **151 ms per run** (the engines pay their load once; a ShelfDB run therefore costs 349 ms end-to-end vs 198 ms of query).*
+| Category | Engine | Query (ms) | One-time load (s) | Speed vs ShelfDB query | Gate | Run |
+|---|---|---|---|---|---|---|
+| Sheaf | **ShelfDB** (fiber bundle) | **198** | 164.8 s build (once; bundle reused) | 1x (reference) | PASS | 2026-10-21 |
+| Wide-column | ScyllaDB | 208 | 21.3 | 1.05x slower | PASS | 2026-10-21 |
+| In-memory KV | Redis | 255 | 4.1 | 1.29x slower | PASS | 2026-10-21 |
+| NoSQL (wide-col) | ScyllaDB (CQL, join resolved at write time) | 271 | 97.4 | 1.37x slower | PASS | 2026-10-21 |
+| Columnar OLAP | DuckDB | 346 | — | 1.75x slower | PASS (recorded baseline) | recorded 2026-10-20 |
+| Embedded | SQLite | 758 | 7.9 | 3.83x slower | PASS | 2026-10-21 |
+| Row store | MariaDB | 971 | 27.0 | 4.91x slower | PASS | 2026-10-21 |
+| Graph | Neo4j (2-hop over 219,681 edges) | 1,090 | 83.7 | 5.51x slower | PASS | 2026-10-21 |
+| Row store | PostgreSQL | 1,918 | — | 9.70x slower | PASS (recorded baseline) | recorded 2026-10-20 |
+
+*ShelfDB's per-run extra: the two sections Q1 needs are demand-loaded from the cached bundle = **151 ms per run** (the engines pay their load once; a ShelfDB run therefore costs 349 ms end-to-end vs 198 ms of query). The ShelfDB row uses the SAME-WINDOW numbers as the engines (the matrix window); the quiet-box control is in the box-state table below.*
 
 
 ## 2. ShelfDB's other IMDb cases (same baselines, same box)
 
 *Opponent baselines are DuckDB's recorded JOB-family numbers (md5-gated against PG); the ShelfDB column is this run's query time, query-vs-query.*
 
-| Case | ShelfDB query (ms) | ShelfDB load (ms) | Best opponent (ms) | Margin |
-|---|---|---|---|---|
-| Q1 2-tbl filter+agg | 198 | 151 | 346 (DuckDB) | 1.7x faster than DuckDB |
-| Q2 4-tbl top-10 group-by | 18,333 | 655 | 2,844 (DuckDB) | 6.4x SLOWER than DuckDB |
-| Q3 4-tbl decade rollup | 1,747 | 95 | 865 (DuckDB) | 2.0x SLOWER than DuckDB |
-| whole suite wall | — | — | — | 21,180 ms (bundle 1.44 GB, 84,405,255 neuron records) |
+| Case | ShelfDB query (ms) | ShelfDB load (ms) | Best opponent (ms) | Margin | Opponent baseline |
+|---|---|---|---|---|---|
+| Q1 2-tbl filter+agg | 198 | 151 | 346 (DuckDB) | 1.7x faster than DuckDB | recorded 2026-10-20 (md5-gated) |
+| Q2 4-tbl top-10 group-by | 18,333 | 655 | 2,844 (DuckDB) | 6.4x SLOWER than DuckDB | recorded 2026-10-20 (md5-gated) |
+| Q3 4-tbl decade rollup | 1,747 | 95 | 865 (DuckDB) | 2.0x SLOWER than DuckDB | recorded 2026-10-20 (md5-gated) |
+| whole suite wall | — | — | — | 21,180 ms (bundle 1.44 GB, 84,405,255 neuron records) | recorded 2026-10-20 (md5-gated) |
 
 
 ## 3. TPC-H SF1 suite (equal work, 6,001,215 lineitem rows)
@@ -49,32 +59,6 @@
 | Sheaf | **ShelfDB** | durable write (WAL) | 6.9 us p50 | — |
 | Sheaf | **ShelfDB** | pre-fold TPCH join (no bundle) | 2.5 s | bundle path: **3.6 ms** |
 
-
-### Run provenance and the box state (recorded 2026-10-21)
-
-| Item | Source | Note |
-|---|---|---|
-| SQLite, DuckDB, Redis, MariaDB, PostgreSQL, Neo4j, ScyllaDB (TPC-H SF1) | **this run** (`run_all.py`, `RUN_SUMMARY_20261021_1531.json`) | each engine started cold, data kept, timed inside the engine's own protocol |
-| IMDb Q1 per category (SQLite, MariaDB, Redis, ScyllaDB, Neo4j) | **this run** (`imdb_multi_engine.json`, run_20261021) | all gated on the same truth values |
-| IMDb Q1 for ScyllaDB (CQL, write-time join) | **this run** (`imdb_scylla.json`) | insert 97.4 s (cold container), query 271.1 ms (best of 5: 236.3 ms) |
-| ShelfDB IMDb Q1/Q2/Q3 | **this run** (`imdb_shelf.json`, the v3 sectioned bundle) | 44,906 / 294,435,444 / 8.145506 exact |
-| DuckDB / PostgreSQL Q1–Q3 opponents | **recorded baseline** (`imdb_job.json`, 2026-10-20, md5-gated) | the JOB-family re-run was blocked by a PostgreSQL shared-memory exhaustion (two clusters on one box) and is re-run separately |
-| Box state | — | this box ran ~1.8x slower than during the earlier baseline recording, so absolute ms are not comparable across runs; every engine in a given table was re-measured on THIS box, and the ratios are the comparable artifact |
-
-### The box-state control (why the afternoon numbers were 1.6x slower)
-
-Same binary, same cached bundle, same data - only the concurrent load differs.
-
-| Measurement | Loaded box (7 engines + 2 containers up) | Idle box (3 runs, median) | Recorded baseline (2026-10-20) |
-|---|---|---|---|
-| Q1 total (ms) | 349 | **322** (378 / 262 / 322) | 143-348 |
-| Q2 total (ms) | 18,988 | **11,883** (12,877 / 11,883 / 11,328) | 10,658 |
-| Q3 total (ms) | 1,842 | **1,541** (1,563 / 1,191 / 1,541) | 1,253 |
-
-The idle numbers land within 6-21 % of the earlier recording, so **the wave-2 code did not regress** - the afternoon
-run was 1.6x slower because the engines (Neo4j's 1 GB JVM heap, ScyllaDB, MariaDB, Redis, PostgreSQL) plus the
-Docker containers were resident. The fiber-bundle BUILD is not involved either: the cached path skips it entirely
-("bundle present and fresh, skipping build"), so it cannot affect a per-run query time.
 
 ## 4. Runtime class summary (the honest framing)
 
