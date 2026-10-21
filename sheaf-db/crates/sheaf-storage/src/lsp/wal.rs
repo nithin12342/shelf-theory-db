@@ -91,37 +91,75 @@ impl WalWriter {
 /// Bytes past a VALID valid_len are prealloc padding / uncommitted tail and
 /// are ignored, never errors.
 pub fn replay(path: &Path) -> std::io::Result<(Vec<Vec<u8>>, bool)> {
+    let r = replay_zero_copy(path)?;
+    let mut out = Vec::with_capacity(r.frames.len());
+    for (a, b) in &r.frames {
+        out.push(r.buf[*a..*b].to_vec());
+    }
+    Ok((out, r.torn))
+}
+
+/// Zero-copy replay (B14): the log is read ONCE and each payload is a RANGE
+/// into that buffer, so recovery no longer duplicates the log
+/// (`payload.to_vec()` per frame). Integrity semantics are unchanged: every
+/// frame still passes magic + length + CRC, and a torn region is still
+/// reported, never silently dropped.
+pub fn replay_zero_copy(path: &Path) -> std::io::Result<Replay> {
     let mut f = File::open(path)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
     if buf.len() < HEADER_LEN {
-        return Ok((Vec::new(), true));
+        return Ok(Replay { buf, frames: Vec::new(), torn: true });
     }
     let valid = u64::from_le_bytes(buf[..8].try_into().unwrap()) as usize;
     let hcrc = u32::from_le_bytes(buf[8..12].try_into().unwrap());
     if hcrc != header_crc(valid as u64) {
         // Distrusted header: every returned frame below was still
         // individually CRC-verified by scan(); the flag carries the doubt.
-        let (out, _) = scan(&buf, HEADER_LEN, buf.len());
-        return Ok((out, true));
-    }
-    if valid > buf.len() {
-        // Committed region extends past EOF: fall through and parse what is
-        // present, flagging truncation.
+        let (frames, _) = scan_ranges(&buf, HEADER_LEN, buf.len());
+        return Ok(Replay { buf, frames, torn: true });
     }
     let end = valid.min(buf.len());
-    let (out, torn) = scan(&buf, HEADER_LEN, end);
-    if torn {
-        return Ok((out, true));
+    let (frames, torn) = scan_ranges(&buf, HEADER_LEN, end);
+    let over = valid > buf.len();
+    Ok(Replay { buf, frames, torn: torn || over })
+}
+
+/// Zero-copy replay result (B14): log bytes + payload RANGES.
+pub struct Replay {
+    pub buf: Vec<u8>,
+    pub frames: Vec<(usize, usize)>,
+    pub torn: bool,
+}
+
+impl Replay {
+    pub fn len(&self) -> usize {
+        self.frames.len()
     }
-    Ok((out, valid > buf.len()))
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+    /// Payload of frame `i` as a slice into the single read buffer.
+    pub fn payload(&self, i: usize) -> &[u8] {
+        let (a, b) = self.frames[i];
+        &self.buf[a..b]
+    }
 }
 
 /// Scan frames over buf[start..end]. Returns (records, torn_inside).
 /// Every returned record passed magic + length + CRC; torn_inside means the
 /// region itself ends mid-frame or corrupt (not just short).
-fn scan(buf: &[u8], start: usize, end: usize) -> (Vec<Vec<u8>>, bool) {
-    let mut out = Vec::new();
+/// Copying scan (public: callers that want owned payloads); replay() itself
+/// uses scan_ranges and never copies.
+pub fn scan(buf: &[u8], start: usize, end: usize) -> (Vec<Vec<u8>>, bool) {
+    let (ranges, torn) = scan_ranges(buf, start, end);
+    let out = ranges.iter().map(|(a, b)| buf[*a..*b].to_vec()).collect();
+    (out, torn)
+}
+
+/// Scan frames as RANGES into `buf` (B14: no per-frame copy).
+fn scan_ranges(buf: &[u8], start: usize, end: usize) -> (Vec<(usize, usize)>, bool) {
+    let mut out: Vec<(usize, usize)> = Vec::new();
     let mut pos = start;
     while pos < end {
         if end - pos < 12 {
@@ -137,7 +175,7 @@ fn scan(buf: &[u8], start: usize, end: usize) -> (Vec<Vec<u8>>, bool) {
         if crc32(payload) != crc {
             return (out, true);
         }
-        out.push(payload.to_vec());
+        out.push((pos + 12, pos + 12 + len));
         pos += 12 + len;
     }
     (out, false)

@@ -50,8 +50,33 @@ fn main() {
     // Gate 2: replay recovers every record intact (CRC-verified).
     let (recs, truncated) = replay(&path).unwrap();
     let replay_ok = recs.len() == N && !truncated;
-    println!("gate_replay_exact={} (recs={}/{}, truncated={})",
-        if replay_ok { "PASS" } else { "FAIL" }, recs.len(), N, truncated);
+    println!(
+        "gate_replay_exact={} (recs={}/{}, truncated={})",
+        if replay_ok { "PASS" } else { "FAIL" },
+        recs.len(),
+        N,
+        truncated
+    );
+
+    // B14: copy vs zero-copy replay on the SAME log (recovery no longer
+    // duplicates the log). The zero-copy path returns payload RANGES into
+    // the single buffer the file was read into.
+    let t_copy = Instant::now();
+    let (frames_copy, _) = sheaf_storage::lsp::wal::replay(&path).unwrap();
+    let copy_ms = t_copy.elapsed().as_secs_f64() * 1e3;
+    let t_zc = Instant::now();
+    let zc = sheaf_storage::lsp::wal::replay_zero_copy(&path).unwrap();
+    let zc_ms = t_zc.elapsed().as_secs_f64() * 1e3;
+    let same = frames_copy.len() == zc.len()
+        && (0..frames_copy.len()).all(|i| frames_copy[i] == zc.payload(i));
+    println!(
+        "wal_replay_compare: copy_ms={copy_ms:.1} zero_copy_ms={zc_ms:.1} frames={} identical={same}",
+        frames_copy.len()
+    );
+    println!(
+        "gate_replay_zero_copy={}",
+        if same && zc_ms <= copy_ms { "PASS" } else { "FAIL" }
+    );
 
     // Gate 3 (context): group-commit batch mode — 20k appends, one flush.
     let path2: PathBuf = dir.join("test4_batch.wal");

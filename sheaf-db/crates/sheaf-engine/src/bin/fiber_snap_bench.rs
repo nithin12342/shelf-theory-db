@@ -266,24 +266,41 @@ fn reference_full_path(bytes: &[u8]) -> (f64, f64) {
 }
 
 fn main() {
-    // ---- Build once if missing / wrong format ----
+    // ---- N3: the bundle is bound to the SOURCE data's fingerprint. A
+    // changed source (new rows, edited file) invalidates it: rebuild,
+    // never a silently stale bundle.
+    let src_fp = fiber_snapshot::source_fingerprint(&[
+        &format!("{DIR}\\lineitem.tbl"),
+        &format!("{DIR}\\orders.tbl"),
+        &format!("{DIR}\\customer.tbl"),
+    ]);
+    // ---- Build once if missing / wrong format / stale source ----
+    let mut stale = false;
     let need_build = match std::fs::read(SNAP) {
         Err(_) => true,
         Ok(raw) => {
-            let bad = raw.len() < 24
+            let bad = raw.len() < 32
                 || u64::from_le_bytes(raw[..8].try_into().unwrap())
                     != fiber_snapshot::SNAP_MAGIC
                 || u32::from_le_bytes(raw[8..12].try_into().unwrap()) != SNAP_FMT_VER;
             if bad {
                 println!("snap_format: old/invalid bundle, rebuilding with v{SNAP_FMT_VER} framing");
             }
-            bad
+            // N3: source fingerprint must match, else the bundle is stale.
+            if !bad {
+                let fp = u64::from_le_bytes(raw[24..32].try_into().unwrap());
+                stale = fp != src_fp;
+                if stale {
+                    println!("snap_stale: source changed (fp {fp} != {src_fp}), rebuilding");
+                }
+            }
+            bad || stale
         }
     };
     if need_build {
         let t0 = Instant::now();
         let (fibers, seg_of) = build();
-        let bytes = fiber_snapshot::encode(&fibers, &seg_of);
+        let bytes = fiber_snapshot::encode(&fibers, &seg_of, src_fp);
         std::fs::write(SNAP, &bytes).expect("snapshot write");
         println!(
             "snap_build: {:.1}s fibers={} segs={} bytes={}",
@@ -359,6 +376,11 @@ fn main() {
         }
     };
     let verify_ms = t1.elapsed().as_secs_f64() * 1e3;
+    if !bundle.matches_source(src_fp) {
+        println!("gate_snap_source_fresh=FAIL (bundle is stale)");
+        std::process::exit(1);
+    }
+    println!("gate_snap_source_fresh=PASS (src_fp={src_fp})");
     // Which CRC path actually runs? (hw vs software fallback) and how fast.
     let t_c = Instant::now();
     let c_hw = sheaf_storage::lsp::ring_wal::crc_hw(&bundle.as_bytes()[24..]);

@@ -27,11 +27,21 @@ const TOTAL_GATE_MS: f64 = 500.0;
 const EXPECTED_TOTAL: f64 = 93574920897.0;
 
 fn main() {
+    // N3: the cached bundle is bound to the source fingerprint; a changed
+    // source forces a rebuild instead of a silently stale answer.
+    let src_fp = fiber_snapshot::source_fingerprint(&[
+        &format!("{DIR}\\lineitem.tbl"),
+        &format!("{DIR}\\orders.tbl"),
+        &format!("{DIR}\\customer.tbl"),
+    ]);
     // ---- Cached path (B1): if the bundle exists, walk it and skip the
     // 4.2 s pre-fold entirely. The bundle layout is exactly this bench's
     // (cust,rev) fibers + (cust,seg) segments.
     let t_open = Instant::now();
     if let Ok(bundle) = Bundle::open(SNAP) {
+        if !bundle.matches_source(src_fp) {
+            println!("fiber_stale: source changed, rebuilding the bundle");
+        } else {
         let load_ms = t_open.elapsed().as_secs_f64() * 1e3;
         let t0 = Instant::now();
         let mut seg_tot = [0f64; 5];
@@ -81,6 +91,7 @@ fn main() {
         }
         println!("FIBER-JOIN-BENCH: PASS (cached bundle)");
         return;
+        }
     }
     // ---- Load + pre-fold (untimed, reported): sort both sides by key ----
     let t0 = Instant::now();
@@ -202,7 +213,7 @@ fn main() {
         t0.elapsed().as_secs_f64(), fibers.len(), orders.len());
     // Persist the pre-fold as a bundle (B1) so the next run skips the build.
     // Same layout as the B3 bundle: [nf][(cust,rev)*nf][ns][(cust,seg)*ns].
-    let bytes = fiber_snapshot::encode(&fibers, &seg_of);
+    let bytes = fiber_snapshot::encode(&fibers, &seg_of, src_fp);
     if std::fs::write(SNAP, &bytes).is_ok() {
         println!("fiber_bundle: written {SNAP} ({} bytes)", bytes.len());
     }

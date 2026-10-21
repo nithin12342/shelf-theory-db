@@ -25,7 +25,7 @@ use sheaf_storage::lsp::ring_wal::crc_hw;
 
 pub const SNAP_MAGIC: u64 = 0x534E415046494252; // "SNAPFIBR"
 pub const SNAP_FMT_VER: u32 = 2;
-pub const HEADER_LEN: usize = 8 + 4 + 8 + 4; // magic | ver | len | crc
+pub const HEADER_LEN: usize = 8 + 4 + 8 + 4 + 8; // magic | ver | len | crc | src_fp
 
 /// A loaded bundle: the file bytes plus parsed section offsets. No owned
 /// per-element copies — iterators decode on the fly.
@@ -35,6 +35,7 @@ pub struct Bundle {
     n_segs: usize,
     fibers_at: usize,
     segs_at: usize,
+    src_fingerprint: u64,
 }
 
 impl Bundle {
@@ -47,8 +48,8 @@ impl Bundle {
 
     /// Take ownership of already-read bytes (no second copy).
     pub fn from_vec(bytes: Vec<u8>) -> Result<Bundle, String> {
-        let (n_fibers, n_segs, fibers_at, segs_at) = parse_header(&bytes)?;
-        Ok(Bundle { bytes, n_fibers, n_segs, fibers_at, segs_at })
+        let (n_fibers, n_segs, fibers_at, segs_at, src_fp) = parse_header(&bytes)?;
+        Ok(Bundle { bytes, n_fibers, n_segs, fibers_at, segs_at, src_fingerprint: src_fp })
     }
 
     /// Borrow-and-copy variant (used by the corruption negative test).
@@ -64,6 +65,18 @@ impl Bundle {
     }
     pub fn byte_len(&self) -> usize {
         self.bytes.len()
+    }
+
+    /// Fingerprint of the SOURCE data this bundle was built from (N3).
+    /// A mismatch means the source changed => the bundle is stale and must
+    /// be rebuilt (never used silently).
+    pub fn src_fingerprint(&self) -> u64 {
+        self.src_fingerprint
+    }
+
+    /// True when the bundle still matches the given source fingerprint.
+    pub fn matches_source(&self, current: u64) -> bool {
+        self.src_fingerprint == current
     }
 
     /// Borrow the raw file bytes (no copy) — used by the reference path in
@@ -126,7 +139,7 @@ impl<'a> Iterator for SegIter<'a> {
 
 /// Parse header + section offsets; returns (n_fibers, n_segs, fibers_at, segs_at).
 /// Fails loud on any mismatch (never a partial load).
-fn parse_header(bytes: &[u8]) -> Result<(usize, usize, usize, usize), String> {
+fn parse_header(bytes: &[u8]) -> Result<(usize, usize, usize, usize, u64), String> {
     if bytes.len() < HEADER_LEN {
         return Err(format!("truncated header ({} bytes)", bytes.len()));
     }
@@ -160,16 +173,18 @@ fn parse_header(bytes: &[u8]) -> Result<(usize, usize, usize, usize), String> {
     if segs_at + n_segs * 9 > payload.len() {
         return Err("segment section overruns payload".to_string());
     }
+    let src_fp = u64::from_le_bytes(bytes[24..32].try_into().unwrap());
     Ok((
         n_fibers,
         n_segs,
         HEADER_LEN + fibers_at,
         HEADER_LEN + segs_at,
+        src_fp,
     ))
 }
 
 /// Serialize a bundle: [MAGIC][ver][len][crc32c][payload].
-pub fn encode(n_fibers: &[(u64, f64)], n_segs: &[(u64, u8)]) -> Vec<u8> {
+pub fn encode(n_fibers: &[(u64, f64)], n_segs: &[(u64, u8)], src_fingerprint: u64) -> Vec<u8> {
     let mut payload = Vec::with_capacity(16 + n_fibers.len() * 16 + n_segs.len() * 9);
     payload.extend_from_slice(&(n_fibers.len() as u64).to_le_bytes());
     for &(c, v) in n_fibers {
@@ -186,6 +201,34 @@ pub fn encode(n_fibers: &[(u64, f64)], n_segs: &[(u64, u8)]) -> Vec<u8> {
     out.extend_from_slice(&SNAP_FMT_VER.to_le_bytes());
     out.extend_from_slice(&(payload.len() as u64).to_le_bytes());
     out.extend_from_slice(&crc_hw(&payload).to_le_bytes());
+    out.extend_from_slice(&src_fingerprint.to_le_bytes());
     out.extend_from_slice(&payload);
     out
+}
+
+/// Fingerprint of a set of source files (N3): hash of (size, mtime) per
+/// file. A bundle built from different sources is STALE and must be rebuilt,
+/// never used silently. Cheap (stat only), order-independent.
+pub fn source_fingerprint(paths: &[&str]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for p in paths {
+        let (size, mtime) = match std::fs::metadata(p) {
+            Ok(md) => {
+                let size = md.len();
+                let mtime = md
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0);
+                (size, mtime)
+            }
+            Err(_) => (0, 0),
+        };
+        for v in [size, mtime] {
+            h ^= v;
+            h = h.wrapping_mul(0x1000_0000_01b3);
+        }
+    }
+    h
 }

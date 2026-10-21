@@ -205,3 +205,5 @@ when a live-fiber design exists.
 | Explicit L2 pinning / prefetch hints | hardware prefetcher wins | R2: iterator-is-faster refuted |
 | **B2 delivered (2026-10-21)** | IMDb build 178.96 s/run -> 51.1 s once; Q1 244 ms, Q2 10658 ms, Q3 1253 ms (10-65x); exact on all three | `imdb_fiber_bench` ALL PASS 2/2 |
 | **B1 delivered (2026-10-21)** | TPCH fiber bench: 4,200 ms pre-fold per run -> 24.8-54.5 ms cached (77-169x), totals exact | `fiber_join_bench` cached path PASS |
+| **B14 delivered (2026-10-21)** | WAL replay: copy 4.8 ms -> zero-copy 3.5 ms (20,000 frames identical); integrity unchanged | `wal_insert_bench` PASS |
+| **N3 delivered (2026-10-21)** | fiber bundle bound to a source fingerprint; stale source => rebuild, never a stale answer | `fiber_snap_bench` + `fiber_join_bench` PASS |
