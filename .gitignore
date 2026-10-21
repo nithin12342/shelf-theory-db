@@ -12,6 +12,9 @@ target/
 **/target/
 Cargo.lock
 
+# Standalone rustc tools (built by tools/run_tools.sh, not cargo targets)
+**/tools/*.exe
+
 # IDE / System
 .vscode/
 .idea/
