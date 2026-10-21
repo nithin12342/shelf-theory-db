@@ -1,4 +1,8 @@
 // crates/sheaf-engine/src/bin/imdb_fiber_bench.rs — ShelfDB side of the IMDb
+//
+// GATE POLICY (B13): build and query are reported separately and the
+// cached bundle is counted as an INDEX BUILD (like PG/DuckDB building
+// their own indexes). The comparable number is build + query.
 // complex bench, now backed by a CACHED sectioned bundle (B2).
 //
 // Before: the fiber build cost 178.96 s per run (principals 102M rows +

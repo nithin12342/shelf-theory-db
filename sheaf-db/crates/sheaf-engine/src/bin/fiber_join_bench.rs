@@ -1,4 +1,10 @@
 // crates/sheaf-engine/src/bin/fiber_join_bench.rs — SYNTHESIS Stage 4 gate
+//
+// GATE POLICY (B13): every fiber gate reports BUILD and QUERY separately and
+// states the amortization rule. A cached bundle is an INDEX BUILD (the same
+// kind of work PG/DuckDB do when they build their indexes), so the
+// like-for-like comparison is build + query on both sides - never a
+// query-only number against an opponent that already built its index.
 // Zero-join incidence fibers: lineitems pre-folded into key-sorted runs and
 // orders into key order ONCE at load (reported, like an index build); the
 // timed query is a pure merge-walk with NO hash tables — per-order runs

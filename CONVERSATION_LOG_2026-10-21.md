@@ -11,7 +11,9 @@
 | 7 | MongoDB uninstalled | `scoop uninstall mongodb` + data dir deleted | ScyllaDB takes the NoSQL slot |
 | 8 | ScyllaDB IMDb case built + run | `imdb_scylla_prep.rs` (Rust) + `imdb_scylla_bench.py` (CQL transport) | query **90 ms**, exact PASS, **1,991x** faster than MongoDB's 183,618.6 ms |
 | 9 | Cross-dataset comparison error found | MongoDB 29.7 ms was the synthetic corpus; IMDb is 183,618.6 ms | table corrected; rule: every row names its dataset |
-| 10 | B2 (IMDb sectioned bundle) built | `shared/imdb_fiber.rs` + `imdb_fiber_bench.rs` | 178.96 s build → cached sections |
+| 10 | B2 (IMDb sectioned bundle) built | `shared/imdb_fiber.rs` + `imdb_fiber_bench.rs` | 178.96 s build → 51.1 s once; Q1 240 ms, Q2 ~10 s, Q3 ~1.2 s; exact |
+| 11 | B1 (TPCH bench wired to the cached bundle) | `fiber_join_bench.rs` cached path | 4,200 ms pre-fold → 24.8–54.5 ms (77–169x), totals exact |
+| 12 | B13 gate policy + N8 model row | headers in both fiber benches; `COMPLEXITY_ANALYSIS.md` | build/query always separate; compile-time axis 109.3 s recorded; A9 closed |
 
 ## Adversarial findings (all found by gates, all recorded)
 
@@ -27,7 +29,7 @@
 | Neo4j benchmark wiped by another bench | traversal 8.6 ms, paths 0 | label-scoped delete |
 | CQL rejects range predicates on the partition key | "Only EQ and IN relation are supported" | single partition + clustering on `avg` |
 
-## Measured results this session
+## Measured results this session (B1 done, B2 done, B3 done)
 
 | Case | Result | Gate |
 |---|---|---|

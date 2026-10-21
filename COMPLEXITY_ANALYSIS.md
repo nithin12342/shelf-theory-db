@@ -28,6 +28,7 @@
 | 13 | Epoch durable op | O(payload) + 1 flush, 0 seeks | forward only | ≈ syscall floor ≈ 2 µs |
 | 14 | b₀ union-find | O(n·α(n)) | O(n) parents | Instant at any tested n |
 | 15 | Graph rollup | O(paths × len) | O(1) per path | 600k × ~6 ops ≈ 40–70 ms |
+| 16 | Clean release build (fat LTO, 37 bins) | O(1) per bin + link | 0.05 GB artifacts | **109.3 s** (fresh CARGO_TARGET_DIR); warm 0.19 s; 1-bin touch 0.8 s |
 
 ## 2. Prediction vs measurement
 
@@ -87,3 +88,21 @@ Untested       : d=8, giant hyperedges, ill-conditioned κ, n≈10⁵ solves
 Real gap found : snapshot has no checksum (A9) — recommend u64 magic+len+crc
                  header before it becomes a silent-corruption vector
 ```
+## A9 close-out (2026-10-21) — snapshot integrity
+
+| Item | Before | After |
+|---|---|---|
+| Format | no checksum | `[MAGIC][fmt_ver][len][crc32]` (fiber_snap) and a sectioned container with per-section CRC32C (imdb bundle) |
+| Torn write | replayed as garbage | rejected: "crc mismatch (torn write?)" — fail loud, never half-load |
+| Stale source data | undetectable | section-level CRC + rebuild-on-missing; a fingerprint-bound cache is the open item (B8) |
+| Gate | none | `gate_snap_corrupt_reject=PASS` on a flipped byte (both bundles) |
+
+## Compile-time axis (N0/N8)
+
+| Metric | Value | Method |
+|---|---|---|
+| Clean release build (fat LTO, 37 bins, `codegen-units=1`) | **109.3 s** | fresh `CARGO_TARGET_DIR`, cargo/rustc 1.98.1 |
+| Warm incremental (no work) | 0.19 s | same tree |
+| Incremental after 1 bin touched | 0.8 s | incl. process spawn |
+| Release-only artifacts | 0.05 GB | main `target/` = 0.87 GB (debug + incremental) |
+| Runtime fiber bundle build (IMDb, per run, pre-cache) | 178.96 s | now 51.1 s once + cached queries |
