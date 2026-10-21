@@ -117,3 +117,57 @@ Invariants that must hold after any change in this area: the reader's accessors 
 the base) and is validated with `validate_fragment`; the morph-cell index is the builder's OWN
 index; a stale bundle is rebuilt, never answered from; a stale fiber falls back to a scan, and the
 scan must return the same aggregate.
+
+## 14. Von Neumann physical limits — measured vs derived (2026-10-21)
+
+**Trigger.** The question "what are the physical limits of this architecture" needed an answer
+that was *measured*, not asserted. The repo already had a bottleneck probe (bandwidth, fsync,
+CRC) but it measured a memcpy, not the memory hierarchy, and it never separated DRAM latency
+from page-walk cost.
+
+**Method.** New probe `crates/sheaf-engine/src/bin/physical_limits_probe.rs` (REQ-057 /
+SPEC-057 / METHOD-052, FILE-099..102) measures this host's actual limits and prints the
+DERIVED physical floors beside them. Report: `VON_NEUMANN_LIMITS.md`. Gate:
+`tests/e2e/von_neumann/run.sh` (6 physics-invariant gates + 2 clock cross-checks).
+
+**Key numbers (3 runs, medians; host: i7-1165G7, 16 GiB DDR4-3200 single channel, 512 GB NVMe):**
+
+| Quantity | Measured | Derived floor | Source |
+|---|---|---|---|
+| L1 / L2 / L3 latency | 1.64 / 4.27 / 21.97 ns (4.6 / 13.7 / 62.6 cycles) | — | pointer chase |
+| DRAM random access | 163.7 ns (cold, 128 MiB) | 41.2 ns | DDR4-3200 CL22 tRCD+tCL+tRP |
+| DRAM access component | 92.6 ns | 41.2 ns | 3-quadrant decomposition |
+| Page walk (4 KiB pages) | 46.6 ns | — | footprint-controlled experiment |
+| Read bandwidth 1T / 4T | 11.5 / 17.0 GB/s | 25.6 GB/s (1ch peak) | pure read stream |
+| Machine balance (ridge) | 2.92 FLOP/byte | — | same-window compute+bandwidth |
+| fsync 4 KiB | 1307.6 µs | — | device flush path |
+| NVMe seq read | 3.20 GB/s | 7.88 GB/s | PCIe 4.0 x4 bus |
+| Landauer | — | 2.87e-21 J/bit | kT·ln2, 300 K |
+| Si signal flight (10 mm) | — | 120 ps | c/3.6 |
+| HDD areal density (10 yr) | — | 1.20 Tb/in² | K·V ≥ kT·ln(t/τ0) |
+
+**Two repo corrections filed (see VON_NEUMANN_LIMITS.md §3):**
+1. **Thread scaling is 1.47×, not 1.25×.** The old 1.25× came from counting a *memcpy*'s
+   write traffic against the read bus. A pure read stream gives 11.5 → 17.0 GB/s (1T → 4T);
+   4→8 adds only 13% because the 64-bit DDR bus is 75-95% saturated. The wall is the
+   **memory bus**, and this host has only ONE populated channel.
+2. **The "64 MB L3 domain" in SPEC-016/ARCHITECTURE is 5.3× this host's real 12 MiB L3.**
+   The measured L2→L3 cliff is 5.1×, so a 64 MB domain on this host is mostly DRAM. Same
+   wall `SPEC-007` already documented from the other side ("12 MB laptop LLC"), now
+   measured directly. The 64 MB figure is a SERVER target; domains should be sized to the
+   measured LLC of the target class.
+
+**One design thesis confirmed numerically.** `VON_NEUMANN_MAPPING.md` said "fewer bytes
+moved, not more FLOPs". Now it is a number: the measured ridge point is 2.92 FLOP/byte and
+this project's d×d matvec runs at 0.33-0.47 FLOP/byte — 6-9× below the ridge, i.e.
+structurally memory-bound. f32, the factored Laplacian, SoA fused columns, pre-aggregation
+and the fiber bundle are all the right response, and the 1-core wall is 11.5 GB/s.
+
+**Methodology corrections found by the gates (worth keeping).** Three measurement bugs were
+caught by the probe's own cross-checks, not by inspection: (a) the pointer chase kept the
+chain in a side array, so it measured CACHE latency while claiming DRAM; (b) the clock was
+derived from a hand-analysed Rust loop that LLVM had strength-reduced and unrolled; (c) the
+clock ratio divided independently-best-taken chain times, mixing thermal windows. The
+final probe derives the clock from the MARGINAL cost of one added dependency and validates
+it with two independent cycle-count cross-checks, measured on adjacent pairs and aggregated
+by median.

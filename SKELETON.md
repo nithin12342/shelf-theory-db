@@ -236,6 +236,24 @@ bounded_contexts:
       - {path: DEFERRED crates/sheaf-net/src/gossip.rs, file_id: FILE-055, folder_id: FOLDER-018, responsibility: "DEFERRED: no async fabric built", depends_on: [FILE-051, FILE-053, FILE-056]}
       - {path: DEFERRED crates/sheaf-net/src/protocol.rs, file_id: FILE-056, folder_id: FOLDER-018, responsibility: "DEFERRED: no wire protocol built", depends_on: []}
 
+  - name: HardwarePhysics
+    reason_separate: "measures the machine's own physical limits; never touches sheaf data, never changes engine behaviour"
+    sot_id: SOT-008
+    aggregates:
+      - name: MemoryHierarchy
+        invariant: "every reported latency comes from a dependent load whose address is produced by the previous load; no number is copied from a datasheet"
+      - name: PhysicalFloor
+        invariant: "every derived limit is computed from a published constant at run time; measured and derived numbers are never mixed in one claim"
+      - name: PhysicsGate
+        invariant: "ordering gates are asserted, not reported; a failure means the measurement is wrong"
+        ports_in: []
+        ports_out: ["measured vs derived limits -> VON_NEUMANN_LIMITS.md"]
+    files:
+      - {path: crates/sheaf-engine/src/bin/physical_limits_probe.rs, file_id: FILE-099, folder_id: FOLDER-020, responsibility: "SPEC-057 probe: measured memory/storage hierarchy vs derived physical floors", depends_on: [FILE-100, FILE-101, FILE-102]}
+      - {path: crates/sheaf-engine/src/bin/shared/phys_mem.rs, file_id: FILE-100, folder_id: FOLDER-020, responsibility: "SPEC-057 latency/bandwidth/clock measurement core", depends_on: []}
+      - {path: crates/sheaf-engine/src/bin/shared/phys_derive.rs, file_id: FILE-101, folder_id: FOLDER-020, responsibility: "SPEC-057 physical-floor derivation from published constants", depends_on: [FILE-100]}
+      - {path: crates/sheaf-engine/src/bin/shared/phys_store.rs, file_id: FILE-102, folder_id: FOLDER-020, responsibility: "SPEC-057 storage measurement core (OS cache bypassed)", depends_on: [FILE-100]}
+
 nodes:
   - {node_id: METHOD-001, parent: FILE-015, children: [METHOD-006], dependencies: [], priority: critical, status: e2e_passed, risk: medium, complexity: moderate, owner: builder, acceptance_criteria: "1M 0-cells + 200k 4-cells; mem <1.5x raw (len+capacity); lookup median sub-15ns true-fetch, host-qualified per SPEC-007", verification_evidence: "clippy -D warnings clean; release E2E tests/e2e/phase1_bcsf/expected/phase1_result.txt (invariants/validate/seed_verify 1.2M 0-mismatch/sorted_scan PASS, mem 1.220/1.220 PASS, median 11.64ns PASS; host excursions to ~30ns worst-round disclosed, ~50% process PASS on 12MB laptop LLC)", traceability: {req_id: REQ-007, spec_id: SPEC-007, sot_id: SOT-003, folder_id: FOLDER-004, file_id: FILE-015, class_id: CLASS-015, method_id: METHOD-001, verify_id: VERIFY-001}, skeleton_impact: updated_criterion}
   - {node_id: METHOD-002, parent: FILE-017, children: [METHOD-007], dependencies: [METHOD-001], priority: critical, status: e2e_passed, risk: medium, complexity: moderate, owner: builder, acceptance_criteria: "WAL replay recovers every committed hypercell; CRC catches torn write", verification_evidence: "phase2 E2E: 61,007 frames replay exact truncated=false; recover 60,002 inserts + 1,005 deletes; torn short-file (49-prefix + truncated) and garbage-past-valid (ignored) both PASS", traceability: {req_id: REQ-009, spec_id: SPEC-009, sot_id: SOT-003, folder_id: FOLDER-005, file_id: FILE-017, class_id: CLASS-017, method_id: METHOD-002, verify_id: VERIFY-002}, skeleton_impact: none}
@@ -283,5 +301,6 @@ nodes:
   - {node_id: METHOD-044, parent: FILE-076, children: [], dependencies: [], priority: normal, status: planned, risk: low, complexity: low, owner: builder, acceptance_criteria: "every library file has a FILE id (7 added); DIP audit clean; no orphan ids", traceability: {req_id: REQ-049, spec_id: SPEC-049, sot_id: SOT-002, folder_id: FOLDER-001, file_id: FILE-076, class_id: CLASS-044, method_id: METHOD-044, verify_id: null}, skeleton_impact: updated_criterion}
   - {node_id: METHOD-050, parent: FILE-064, children: [], dependencies: [METHOD-039], priority: normal, status: planned, risk: low, complexity: low, owner: builder, acceptance_criteria: "one amortization rule for all fiber gates (build/load/query stated separately); rule in gate output + RUNTIME_COMPARISON", traceability: {req_id: REQ-055, spec_id: SPEC-055, sot_id: SOT-006, folder_id: FOLDER-019, file_id: FILE-064, class_id: CLASS-050, method_id: METHOD-050, verify_id: null}, skeleton_impact: updated_criterion}
   - {node_id: METHOD-051, parent: FILE-017, children: [], dependencies: [], priority: normal, status: planned, risk: low, complexity: low, owner: builder, acceptance_criteria: "WAL replay returns slices into the mapped buffer; replay exact; no per-record payload copy", traceability: {req_id: REQ-056, spec_id: SPEC-056, sot_id: SOT-003, folder_id: FOLDER-005, file_id: FILE-017, class_id: CLASS-051, method_id: METHOD-051, verify_id: null}, skeleton_impact: none}
+  - {node_id: METHOD-052, parent: FILE-099, children: [], dependencies: [], priority: high, status: e2e_passed, risk: medium, complexity: moderate, owner: builder, acceptance_criteria: "6 physics-invariant gates PASS (L1<L2<L3<DRAM; DRAM>L3; DRAM>datasheet CAS floor; fsync>>buffered write; read BW>5% of bus peak; DRAM>L1) + 2 clock cross-checks (add-chain ratio 2.0, imul-chain ratio 3.0) + machine balance measured same-window as its bandwidth; report cites probe outputs and published sources only", verification_evidence: "3 process runs (tests/e2e/realtime_bench/results/pl_run{1,2,3}.txt): all 6 gates PASS in all 3; cross-checks add=1.98 imul=2.97; derived DRAM access 88.0 ns = 2.13x the 41.2 ns DDR4-3200 CAS floor; page walk 94.2 ns; machine balance 2.12 FLOP/byte (same window); fsync 1.399 ms; repo corrections filed (thread scaling 1.25x -> 2.49x; 64 MB L3-domain assumption vs 12 MiB real LLC); gate script tests/e2e/von_neumann/run.sh; report VON_NEUMANN_LIMITS.md", traceability: {req_id: REQ-057, spec_id: SPEC-057, sot_id: SOT-005, folder_id: FOLDER-020, file_id: FILE-099, class_id: CLASS-052, method_id: METHOD-052, verify_id: null}, skeleton_impact: added-missing-coverage}
 
 pattern_library_candidates: []

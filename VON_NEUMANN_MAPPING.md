@@ -1,5 +1,10 @@
 # Math → von Neumann machine: how sheaf theory becomes a program
 
+> **Companion document:** `VON_NEUMANN_LIMITS.md` — the measured physical limits of
+> this machine (memory-hierarchy ladder, storage floors, machine balance) and the
+> comparison against the numbers derived from published physical constants.
+> This document maps *math → machine parts*; that one measures *machine → limits*.
+
 | Von Neumann part | Role | Sheaf-DB use |
 |---|---|---|
 | Memory (addressed words) | Holds data + instructions | BCSF slabs (`stalks`, `discrete`, `dims`, offsets) |
@@ -100,3 +105,8 @@ Certificate   → integer/branch check (δ²=0) or reduction (energy)
 Persistence   → sequential log + snapshot files (WAL, fibers)
 Efficiency    → fewer bytes moved, not more FLOPs (memory wall binds)
 ```
+
+**That last line is now a measured number, not a slogan.** The measured roofline ridge
+point on this host is **2.92 FLOP/byte**; this project's d×d matvec runs at
+**0.33-0.47 FLOP/byte** — 6-9× below the ridge, i.e. structurally memory-bound. See
+`VON_NEUMANN_LIMITS.md` §2.4 for the derivation and the same-window measurement.
