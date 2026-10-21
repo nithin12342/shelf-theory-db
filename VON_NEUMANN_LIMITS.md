@@ -27,6 +27,19 @@ Rows = the physical limit. Columns = the derived floor, what this host measures,
 | L8 | Machine balance (ridge point) | — | 2.92 FLOP/byte | — | Kernel is 6-9× below it |
 | L9 | HDD areal density (10-yr retention) | 1.20 Tb/in² | — | — | Thermal stability, not area |
 | L10 | Storage/DRAM latency ratio | — | 33.0× | — | Justifies pre-aggregation |
+| L11 | **Database scan vs memory ceiling** | — | **42-81% of ceiling** | — | **Gap is the accumulator, not memory** |
+
+### 0.1 Does the database reach the memory limit? Short answer
+
+**No, not at one thread. The database scan reaches 42% of the memory ceiling at one
+thread and 81% at four threads. The missing time is not the memory system. It is a
+serial accumulator inside the kernel.**
+
+The detail is in section 2.4a. The short version: the partition scan keeps one
+floating-point accumulator per thread, so every row waits for the previous
+row's multiply-add to finish. The memory system idles while the processor
+waits. A four-lane version of the same arithmetic runs 1.47x faster on the
+same bytes.
 
 ---
 
@@ -268,6 +281,68 @@ lever that moves it is **bytes moved**, not FLOPs. That is exactly why:
 (11.5 GB/s) is 45% of the 25.6 GB/s single-channel DDR4 peak. So even a perfect
 implementation cannot go much past ~11 GB/s on one core; the wall is 4× below what a naive
 "just make the kernel faster" plan would target.
+
+### 2.4a Does the database reach the memory ceiling? The gap is the accumulator
+
+The roofline says the kernel is memory-bound. That predicts it should run at the
+memory bandwidth. It does not. The probe measures the real database kernel and
+the memory ceiling **in the same window**, so the difference cannot be thermal
+drift.
+
+**Rows = thread count. Columns = the memory ceiling and the real kernel, both
+measured on the same 48.0 MB of TPC-H lineitem data in the same window.**
+
+| Threads | Memory ceiling (GB/s) | Partition scan (GB/s) | Utilization (%) | Fused scan (GB/s) | Utilization (%) |
+|---|---|---|---|---|---|
+| 1 | 13.67 | 5.78 | **42.3** | 7.71 | 56.4 |
+| 2 | 22.21 | 12.34 | **55.5** | 10.27 | 46.2 |
+| 4 | 22.42 | 18.12 | **80.8** | 10.14 | 45.2 |
+
+The ceiling row is a streaming read of the same two columns with the same thread
+count. The kernel row is the storage engine's own partition scan. The ceiling
+reaches 22.4 GB/s at four threads, so the memory system can feed the kernel
+faster than the kernel consumes.
+
+**The cause is the accumulator, not the memory.** The partition scan keeps one
+floating-point accumulator per thread:
+
+```rust
+let mut acc = 0f64;
+for (a, b) in pp.iter().zip(qq.iter()) {
+    acc += *a as f64 * (1.0 - *b as f64);
+}
+```
+
+Every row waits for the previous row's multiply-add to retire. The measured
+multiply-add latency sets the pace, and the memory system idles in between.
+The probe isolates this by running the same arithmetic with one lane and with
+four independent lanes, in the same window:
+
+| Lanes | Time (ms) | Effective (GB/s) | Note |
+|---|---|---|---|
+| 1 | 7.20 | 6.66 | serial dependency chain |
+| 4 | 4.91 | 9.78 | four independent chains |
+| — | — | — | **1.47x faster on the same bytes** |
+
+**Why one thread is the worst case.** The dependency chain is per thread. At
+one thread the chain sets the pace and the memory idles 58% of the time. At
+four threads the four chains interleave, so the memory system stays busy and
+utilization rises to 81%. The kernel has a ceiling of its own, and it is below
+the memory ceiling at every thread count.
+
+**What this means for the design.** The memory hierarchy was never the
+bottleneck for the single-thread scan. The fix is a data layout and loop
+change, not a faster machine and not a wider bus:
+
+- The fused scan already uses four lanes, and it is 1.33x faster than the
+  partition scan at one thread.
+- The partition scan is the one that still uses a single accumulator.
+- Both kernels produce the same aggregate to within 1e-12, so the change is
+  safe to make.
+
+The repo already moved the column layout to structure of arrays (FILE-076).
+The accumulator lanes are the next step, and the probe now measures the size
+of that prize: **1.47x on the single-thread scan.**
 
 ### 2.5 Bandwidth-delay product — the concurrency the memory system must hide
 

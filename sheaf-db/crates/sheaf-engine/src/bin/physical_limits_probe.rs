@@ -27,6 +27,8 @@ mod phys_derive;
 mod phys_mem;
 #[path = "shared/phys_store.rs"]
 mod phys_store;
+#[path = "shared/phys_workload.rs"]
+mod phys_workload;
 
 use phys_mem::{chase_latency_ns, chase_latency_page_spread_ns, read_bandwidth_gbs};
 use std::time::Instant;
@@ -386,80 +388,6 @@ fn section_f(
     println!("gate_dram_slower_than_l1={}", pass(g6));
 }
 
-/// Section G: the ROOFLINE PAIR, measured in ONE window.
-///
-/// The machine balance (FLOP/byte) is a ratio of a compute rate to a
-/// bandwidth rate. If those two are measured minutes apart on a
-/// thermally-governed laptop whose clock swings by 3x, the ratio is
-/// meaningless. This section therefore measures BOTH in the same
-/// interleaved pass, so the ridge point is a same-window number.
-///
-/// It also measures the arithmetic intensity of the repo's own kernel
-/// shape (a dense d x d matvec per face), which is the number that
-/// decides whether the kernel is memory-bound or compute-bound.
-fn section_g() {
-    let n = 4 << 10;
-    let a: Vec<f32> = (0..n).map(|i| (i % 17) as f32 * 0.01).collect();
-    let b: Vec<f32> = (0..n).map(|i| (i % 13) as f32 * 0.02).collect();
-    let c: Vec<f32> = (0..n).map(|i| (i % 11) as f32 * 0.03).collect();
-    let iters = 400_000;
-
-    // 512 MiB read buffer, 64 Mi u64 elements.
-    let buf: Vec<u64> = (0..(64 << 20)).map(|i| i ^ 0x9E37_79B9).collect();
-
-    let mut best_flops = 0.0f64;
-    let mut best_bw = 0.0f64;
-
-    // INTERLEAVE: each rep measures bandwidth then compute, back to back.
-    for _ in 0..3 {
-        let bw = phys_mem::read_bandwidth_gbs(&buf, 1);
-        if bw > best_bw {
-            best_bw = bw;
-        }
-        let t0 = Instant::now();
-        #[cfg(target_arch = "x86_64")]
-        let fl = unsafe {
-            if is_x86_feature_detected!("avx512f") {
-                phys_mem::simd::flops_avx512(&a, &b, &c, iters)
-            } else {
-                phys_mem::simd::flops_avx2(&a, &b, &c, iters)
-            }
-        };
-        #[cfg(not(target_arch = "x86_64"))]
-        let fl = phys_mem::flops_scalar(&a, &b, &c, iters);
-        let g = fl / t0.elapsed().as_secs_f64() / 1e9;
-        if g > best_flops {
-            best_flops = g;
-        }
-    }
-
-    println!("G_same_window_read_GBps={:.2}", best_bw);
-    println!("G_same_window_gflops={:.2}", best_flops);
-    println!(
-        "G_same_window_machine_balance_flop_per_byte={:.3}",
-        best_flops / best_bw
-    );
-
-    // Arithmetic intensity of the repo's own kernel shape.
-    // A dense d x d matvec reads d*d weights + d inputs and does d*d FMAs
-    // (2*d*d flops). With f32 data the intensity is:
-    //   2*d*d flops / (4*(d*d + d) bytes)  =  d*d / (2*(d*d + d))
-    for d in [2usize, 4, 8, 16] {
-        let flops = 2.0 * (d * d) as f64;
-        let bytes = 4.0 * ((d * d + d) as f64);
-        let intensity = flops / bytes;
-        println!(
-            "G_kernel_intensity_flop_per_byte d={} intensity={:.3} memory_bound_vs_measured_ridge={}",
-            d,
-            intensity,
-            if intensity < best_flops / best_bw {
-                "YES"
-            } else {
-                "NO"
-            }
-        );
-    }
-}
 
 fn main() {
     let arg = std::env::args().nth(1).unwrap_or_default();
@@ -530,7 +458,17 @@ fn main() {
         );
     }
     if run("G") {
-        section_g();
+        phys_workload::section_g();
+    }
+    if run("H") {
+        // Section H: does the real database scan kernel reach the memory
+        // ceiling? Ceiling and kernel measured in the SAME window.
+        for t in [1usize, 2, 4] {
+            phys_workload::measure_utilization(t);
+        }
+        // Isolate the accumulator dependency as the cause of any gap.
+        let (price, disc) = phys_workload::build_workload();
+        phys_workload::measure_accumulator_effect(&price, &disc);
     }
     println!("PHYSICAL-LIMITS-PROBE: COMPLETE");
 }

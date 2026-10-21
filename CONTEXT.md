@@ -171,3 +171,16 @@ clock ratio divided independently-best-taken chain times, mixing thermal windows
 final probe derives the clock from the MARGINAL cost of one added dependency and validates
 it with two independent cycle-count cross-checks, measured on adjacent pairs and aggregated
 by median.
+
+**Does the database reach the memory limit? No, and the cause is known.**
+The probe measures the real storage-engine scan kernel against the memory ceiling in the
+SAME window, on the same 48.0 MB of TPC-H lineitem data. Utilization: **42.3% at one
+thread, 55.5% at two, 80.8% at four** (METHOD-053, FILE-103, `shared/phys_workload.rs`).
+The memory ceiling reaches 22.4 GB/s at four threads, so memory can feed the kernel faster
+than the kernel consumes. The gap is the **single f64 accumulator** in the partition scan
+(`sheaf-kernel/src/simd/mt_scan.rs`): every row waits for the previous row's multiply-add,
+so the memory idles. A controlled 1-lane vs 4-lane experiment on the same bytes shows
+**1.47x** from breaking that chain alone, with the aggregate unchanged (rel diff 2.1e-7,
+which is double-precision rounding over 6e6 additions). The fused structure-of-arrays
+kernel already uses four lanes and is 1.33x faster at one thread. **This is a loop-shape
+fix, not a hardware limit, and it is the next change to make.**
