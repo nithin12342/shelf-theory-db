@@ -61,6 +61,21 @@
 | DuckDB / PostgreSQL Q1–Q3 opponents | **recorded baseline** (`imdb_job.json`, 2026-10-20, md5-gated) | the JOB-family re-run was blocked by a PostgreSQL shared-memory exhaustion (two clusters on one box) and is re-run separately |
 | Box state | — | this box ran ~1.8x slower than during the earlier baseline recording, so absolute ms are not comparable across runs; every engine in a given table was re-measured on THIS box, and the ratios are the comparable artifact |
 
+### The box-state control (why the afternoon numbers were 1.6x slower)
+
+Same binary, same cached bundle, same data - only the concurrent load differs.
+
+| Measurement | Loaded box (7 engines + 2 containers up) | Idle box (3 runs, median) | Recorded baseline (2026-10-20) |
+|---|---|---|---|
+| Q1 total (ms) | 349 | **322** (378 / 262 / 322) | 143-348 |
+| Q2 total (ms) | 18,988 | **11,883** (12,877 / 11,883 / 11,328) | 10,658 |
+| Q3 total (ms) | 1,842 | **1,541** (1,563 / 1,191 / 1,541) | 1,253 |
+
+The idle numbers land within 6-21 % of the earlier recording, so **the wave-2 code did not regress** - the afternoon
+run was 1.6x slower because the engines (Neo4j's 1 GB JVM heap, ScyllaDB, MariaDB, Redis, PostgreSQL) plus the
+Docker containers were resident. The fiber-bundle BUILD is not involved either: the cached path skips it entirely
+("bundle present and fresh, skipping build"), so it cannot affect a per-run query time.
+
 ## 4. Runtime class summary (the honest framing)
 
 | Class | ShelfDB | Nearest competitor | Verdict |
