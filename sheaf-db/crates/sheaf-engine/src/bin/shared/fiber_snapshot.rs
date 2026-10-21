@@ -1,6 +1,11 @@
 // crates/sheaf-engine/src/bin/shared/fiber_snapshot.rs — durable fiber bundle
 // codec (B3 / METHOD-040, REQ-045 / SPEC-045).
 //
+// This file is a bin-local shared module (like shared/corpus.rs): it is
+// compiled into every bin that includes it, and each bin uses a different
+// subset of the API, so unused-item warnings would fire per bin.
+#![allow(dead_code)]
+//
 // Zero-copy load: the whole file is read ONCE into a byte buffer and the
 // payload is BORROWED from it — no per-element Vec::push deserialization.
 // Measured before this change: load 158.1 ms for a 40.6 MB bundle, of which
@@ -33,6 +38,13 @@ pub struct Bundle {
 }
 
 impl Bundle {
+    /// Open a bundle file: read once, verify magic/version/length/CRC.
+    /// Fails loud on any mismatch (never a partial load).
+    pub fn open(path: &str) -> Result<Bundle, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        Bundle::from_vec(bytes)
+    }
+
     /// Take ownership of already-read bytes (no second copy).
     pub fn from_vec(bytes: Vec<u8>) -> Result<Bundle, String> {
         let (n_fibers, n_segs, fibers_at, segs_at) = parse_header(&bytes)?;
