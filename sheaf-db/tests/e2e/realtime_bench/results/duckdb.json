@@ -127,7 +127,7 @@
     },
     "note": "run4 fresh reload (DB deleted first). Confirms quiet band within 20-80%."
   },
-  "note": "12 runs; latest run12_20261020.",
+  "note": "13 runs; latest run13_20261021.",
   "run5_20261014": {
     "counts": {
       "customer": 150000,
@@ -367,5 +367,35 @@
       "n": 10000
     },
     "note": "runner 2026-10-20 20:57 UTC+05:30"
+  },
+  "run13_20261021": {
+    "counts": {
+      "customer": 150000,
+      "orders": 1500000,
+      "lineitem": 6001215,
+      "part": 200000,
+      "partsupp": 800000
+    },
+    "duckdb_version": "1.5.4",
+    "point_lookup_us": {
+      "p50": 3152.7,
+      "p99": 4768.7,
+      "n": 20000
+    },
+    "join_ms": {
+      "p50": 418.8,
+      "rows": 100,
+      "n": 3
+    },
+    "scan_agg_ms": {
+      "p50": 18.7,
+      "n": 5
+    },
+    "insert_us": {
+      "p50": 4673.5,
+      "p99": 6493.7,
+      "n": 10000
+    },
+    "note": "runner 2026-10-21 15:13 UTC+05:30"
   }
 }

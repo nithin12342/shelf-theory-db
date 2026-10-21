@@ -4,14 +4,14 @@
   "shape": "CQL denormalized: PRIMARY KEY ((year), avg, tconst)",
   "etl": "Rust: imdb_scylla_prep (write-time join)",
   "etl_rows": 215309,
-  "insert_ms": 24781.8,
-  "query_ms": 92.2,
+  "insert_ms": 97443.5,
+  "query_ms": 271.1,
   "query_ms_runs": [
-    85.4,
-    89.0,
-    92.2,
-    93.7,
-    102.5
+    236.3,
+    260.1,
+    271.1,
+    289.4,
+    296.1
   ],
   "count": 44906,
   "votes": 294435444,

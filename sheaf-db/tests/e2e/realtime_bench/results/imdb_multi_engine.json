@@ -82,5 +82,67 @@
       "gate": "PASS",
       "gate_detail": "pairs 173716 == 173716"
     }
+  },
+  "run_20261021_1551": {
+    "sqlite": true,
+    "mariadb": true,
+    "redis": true,
+    "scylladb": true,
+    "neo4j": true,
+    "duckdb_q1_ms": 345.7,
+    "pg_q1_ms": 1918.1,
+    "shelfdb_q1_ms": 197.8
+  },
+  "run_20261021_1551_detail": {
+    "sqlite": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440741,
+      "ms": 757.5370000013208,
+      "load_s": 7.889072300000407,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 7.63e-15"
+    },
+    "mariadb": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440566,
+      "ms": 970.9059999986493,
+      "load_s": 26.99336630000107,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 1.40e-14"
+    },
+    "redis": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145503941566828,
+      "ms": 255.46310000208905,
+      "lookup_ms": 8917.080200000782,
+      "load_s": 4.140592899999319,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 2.73e-07"
+    },
+    "scylladb": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440566,
+      "ms": 208.27379999900586,
+      "range_ms": 274.1320999994059,
+      "range_rows": 10000,
+      "load_s": 21.348121900002297,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 1.40e-14"
+    },
+    "neo4j": {
+      "pairs": 173716,
+      "expected_pairs": 173716,
+      "ms": 1089.5234000017808,
+      "load_s": 83.68974420000086,
+      "titles": 20885,
+      "edges": 219681,
+      "persons": 184073,
+      "gate": "PASS",
+      "gate_detail": "pairs 173716 == 173716"
+    }
   }
 }
