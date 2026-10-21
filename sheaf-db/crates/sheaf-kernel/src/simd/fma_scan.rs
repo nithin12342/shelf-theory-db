@@ -108,3 +108,38 @@ unsafe fn fused_sum_avx512(slab: &[f32], d: usize, p: usize, q: usize) -> f64 {
     }
     total
 }
+
+/// B6: column-wise fused sum over TWO CONTIGUOUS column slices
+/// (sum(a[i] * (1 - b[i]))). With SoA as the primary stalk layout the
+/// operands are unit-stride, so the kernel needs no gather and no stride
+/// arithmetic - the same math as `fused_sum_pairs` on an AoS slab, without
+/// the 2x materialization.
+pub fn fused_sum_columns(a: &[f32], b: &[f32]) -> f64 {
+    debug_assert_eq!(a.len(), b.len(), "column lengths must match");
+    let n = a.len();
+    let mut acc = 0f64;
+    let mut i = 0usize;
+    // 4x unrolled with a prefetch 256 B ahead (same shape as the AoS path).
+    let mut lanes = [0f64; 4];
+    while i + 4 <= n {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            use std::arch::x86_64::{_MM_HINT_T0, _mm_prefetch};
+            if i + 64 < n {
+                _mm_prefetch(a.as_ptr().add(i + 64) as *const i8, _MM_HINT_T0);
+            }
+        }
+        for k in 0..4 {
+            lanes[k] += a[i + k] as f64 * (1.0 - b[i + k] as f64);
+        }
+        i += 4;
+    }
+    for l in lanes.iter() {
+        acc += *l;
+    }
+    while i < n {
+        acc += a[i] as f64 * (1.0 - b[i] as f64);
+        i += 1;
+    }
+    acc
+}

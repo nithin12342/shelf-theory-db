@@ -1,11 +1,31 @@
-// crates/sheaf-engine/src/bin/arrow_scan_bench.rs — SYNTHESIS Stage 1a gate
-// Builds the Arrow-compatible slab from lineitem.tbl and verifies:
-// (1) base address 64B-aligned, (2) fused revenue sum matches tpch_scan's
-// 218102223881.86 (same row order/ops), (3) scan time vs 7.9 ms baseline.
-// Stage 1a needs parity, not victory — the FMA kernel (Stage 1b) chases 2.8 ms.
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use sheaf_storage::bcsf::arrow_layout::ArrowStalkSlab;
+
+/// B6: a counting allocator - the "no memory spike" gate must be measured,
+/// not asserted.
+static ALLOC_BYTES: AtomicU64 = AtomicU64::new(0);
+
+struct CountingAlloc;
+
+unsafe impl GlobalAlloc for CountingAlloc {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        ALLOC_BYTES.fetch_add(l.size() as u64, Ordering::Relaxed);
+        System.alloc(l)
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        System.dealloc(p, l)
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, new_size: usize) -> *mut u8 {
+        ALLOC_BYTES.fetch_add(new_size as u64, Ordering::Relaxed);
+        System.realloc(p, l, new_size)
+    }
+}
+
+#[global_allocator]
+static ALLOC: CountingAlloc = CountingAlloc;
 
 const LINEITEM: &str = r"D:\bench\build\tpch-dbgen\lineitem.tbl";
 const EXPECTED_ROWS: usize = 6_001_215;
@@ -65,16 +85,16 @@ fn main() {
     println!("arrow_scan: best_ms={:.1} (3 reps) vs tpch_scan 7.9ms", best);
     println!("gate_parity={}", if best < 7.9 * 1.1 { "PASS (within 10% of baseline)" } else { "RECORDED (regression vs baseline)" });
 
-    // Gate 4 (Stage 1b): FMA kernel over the raw slab (validity pre-compacted:
-    // this slab is fully valid, so the kernel skips bit checks by contract).
-    let raw: &[f32] = unsafe {
-        std::slice::from_raw_parts(slab.base_addr() as *const f32, slab.len() * 2)
-    };
+    // Gate 4 (Stage 1b): FMA kernel over the slab's columns. B6: with SoA as
+    // the primary layout the two operands are CONTIGUOUS slices (no gather,
+    // no stride arithmetic) - the kernel reads them directly.
+    let col_p = slab.column(0);
+    let col_q = slab.column(1);
     let mut fma_best = f64::MAX;
     let mut fma_sum = 0f64;
     for _ in 0..3 {
         let t0 = Instant::now();
-        fma_sum = sheaf_kernel::simd::fma_scan::fused_sum_pairs(raw, 2, 0, 1);
+        fma_sum = sheaf_kernel::simd::fma_scan::fused_sum_columns(col_p, col_q);
         fma_best = fma_best.min(t0.elapsed().as_secs_f64() * 1e3);
     }
     let fma_rel = ((fma_sum - EXPECTED_SUM) / EXPECTED_SUM).abs();
@@ -86,9 +106,23 @@ fn main() {
 
     // Gate 5 (SoA follow-up): transpose once (reported), then unit-stride
     // sum over contiguous columns — the layout gather cannot match.
+    // B6: the transpose is a VIEW into the slab (SoA primary) - it must not
+    // allocate. The allocation counter proves it.
+    let alloc_before = ALLOC_BYTES.load(Ordering::Relaxed);
     let t0 = Instant::now();
     let (cp, cq) = slab.transpose_soa(0, 1);
     let transpose_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let alloc_bytes = ALLOC_BYTES.load(Ordering::Relaxed) - alloc_before;
+    let borrowed = matches!(cp, std::borrow::Cow::Borrowed(_))
+        && matches!(cq, std::borrow::Cow::Borrowed(_));
+    let spike_bytes = (slab.len() * 2 * 4) as u64;
+    println!(
+        "soa_transpose: allocated_bytes={alloc_bytes} (old AoS path would copy {spike_bytes}) borrowed={borrowed}"
+    );
+    println!(
+        "gate_soa_no_memory_spike={}",
+        if borrowed && alloc_bytes < 4096 { "PASS" } else { "FAIL" }
+    );
     // Single timed rep (NOT best-of-3 in-process): any intra-process rep
     // loop lets scalar evolution hoist the invariant sum out of the timed
     // region (observed: 0.0/0.0/27.9ms reps with correct sums). Repeat at the
