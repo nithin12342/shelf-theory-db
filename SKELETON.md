@@ -119,6 +119,9 @@ bounded_contexts:
       - {path: crates/sheaf-storage/src/bcsf/coord.rs, file_id: FILE-077, folder_id: FOLDER-004, responsibility: "dense 0-cochain coordinate vectors", depends_on: [FILE-076]}
       - {path: crates/sheaf-storage/src/lsp/graded_log.rs, file_id: FILE-078, folder_id: FOLDER-005, responsibility: "dimension-partitioned WAL with down-closure", depends_on: [FILE-017]}
       - {path: crates/sheaf-storage/src/lsp/ring_wal.rs, file_id: FILE-079, folder_id: FOLDER-005, responsibility: "lock-free MPSC ring WAL with HW CRC", depends_on: [FILE-017]}
+      - {path: crates/sheaf-storage/src/lsp/colimit.rs, file_id: FILE-080, folder_id: FOLDER-005, responsibility: "background canonical projection", depends_on: [FILE-017, FILE-048]}
+      - {path: crates/sheaf-kernel/src/components.rs, file_id: FILE-081, folder_id: FOLDER-009, responsibility: "b0 connected components via union-find", depends_on: []}
+      - {path: crates/sheaf-kernel/src/solvers/chebyshev.rs, file_id: FILE-082, folder_id: FOLDER-009, responsibility: "Chebyshev Tikhonov filter", depends_on: [FILE-025]}
 
   - name: SheafKernel
     reason_separate: "owns linear algebra, never parses queries"

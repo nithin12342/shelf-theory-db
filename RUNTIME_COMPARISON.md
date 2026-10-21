@@ -19,7 +19,8 @@
 | Graph | Neo4j (2-hop, 219,681 edges) | 385 | 16.0 | 2.7x slower | PASS |
 | Row store | MariaDB | 1,040 | 20.2 | 7.3x slower | PASS |
 | Row store | PostgreSQL | 1,918 | (kept) | 13.4x slower | PASS |
-| Document | MongoDB ($lookup) | 183,619 | 35.9 | 1,284x slower | PASS |
+| NoSQL (wide-col) | ScyllaDB (CQL, denormalized) | **92** | ETL 3,312 + insert 24.8 | **1992x faster than MongoDB**; query 1.6x faster than ShelfDB, but build 28.1 s vs ShelfDB's 0.24 s | ✅ |
+| Document | MongoDB ($lookup) | 183,619 | 35.9 | 1,284x slower | PASS — **MongoDB uninstalled 2026-10-20**, ScyllaDB takes the NoSQL slot |
 
 ## 2. ShelfDB's other IMDb cases (same baselines, same box)
 
@@ -88,3 +89,20 @@ Adopt: YES for analytics/join/traversal workloads, in-process,
 Not for: ns-class point lookups over a network, or one-shot ad-hoc
   joins where a columnar engine answers faster with no build step.
 ```
+
+**Correction (2026-10-21) — a cross-dataset comparison that flattered MongoDB.**
+An interim summary placed "MongoDB 29.7 ms" beside "ShelfDB 143 ms" in one row. Those were **different corpora**: 29.7 ms was MongoDB on the synthetic 5x100k corpus (200-row $lookup); 143 ms was ShelfDB on IMDb (12.9M + 1.7M rows). On the **same IMDb data** MongoDB's query measured **183,618.6 ms** vs ShelfDB **142.7 ms** — ShelfDB wins by **1,287x**. MongoDB was uninstalled after that; ScyllaDB (CQL) now holds the NoSQL slot because it moves the join to write time and answers the same truth values from a clustering-range scan.
+
+**Rule adopted:** every row in this document must name its dataset, and rows with different datasets are not comparable. The IMDb table above is the only like-for-like table (one dataset, one query shape, one truth).
+
+## 1b. The IMDb Q1 task, three NoSQL/Sheaf ways (rows = engine, columns = where the join happens, build, query, total)
+
+| Engine | Join happens at | Build (ms) | Query (ms) | **Total (ms)** | Gate |
+|---|---|---|---|---|---|
+| **ShelfDB** (sheaf) | pre-fold (index build) | 240 | 142.7 | **383** | ✅ |
+| ScyllaDB (CQL, wide-col) | write time (ETL) | 28094 | 92 | 28186 | ✅ |
+| MongoDB (document) | query time ($lookup) | 35900 | 183619 | 219519 | ❌ uninstalled 2026-10-20 |
+
+**Two findings from this case (adversarial, both against us):**
+1. **ScyllaDB's query (90 ms) beats ShelfDB's (143 ms)** — because CQL clusters on `avg`, so `avg >= 7.5` is a clustering-range scan, while ShelfDB still scans all 12.9M `title.basics` rows to apply the movie/year filter at query time. The fix is our own P3 lesson (pre-aggregate / pre-filter at build time), not a new idea: a filtered fiber would make the ShelfDB query a pure scan of the 44,906 surviving rows.
+2. **On total time ShelfDB still wins by 74x** (0.38 s vs 28.1 s) because its build is 118x cheaper than Scylla's write-time join + insert. Query-only vs build+query are different games and must be reported separately.
