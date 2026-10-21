@@ -60,4 +60,15 @@ grep -q "C_bekenstein_max_bits=" "tests/e2e/von_neumann/expected/physical_limits
 grep -q "C_address_canonical_max_bytes=" "tests/e2e/von_neumann/expected/physical_limits.txt"
 grep -q "C_nand_years_to_exhaust_rating=" "tests/e2e/von_neumann/expected/physical_limits.txt"
 
+# Section J: the amplification experiment. The read and write costs must
+# both be at or above the physical floor of 1.0, the fiber must read far
+# fewer bytes than any base read, and the shadow merge must cost less
+# storage than the copy merge.
+grep -q "gate_write_amp_at_least_one=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_read_amp_at_least_one=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_fiber_reads_fewer_bytes_than_base=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_fiber_read_amp_far_below_base=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_shadow_merge_cheaper_than_copy=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "A_amp_theoretical_floor" "tests/e2e/von_neumann/expected/physical_limits.txt"
+
 echo "VON NEUMANN LIMITS E2E: PASS"

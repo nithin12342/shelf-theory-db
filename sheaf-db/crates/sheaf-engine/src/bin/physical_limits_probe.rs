@@ -21,6 +21,8 @@
 // readable: `key=value` per line. Section E consumes this run's A/B/C
 // measurements, so the derived comparison can never drift from the data.
 
+#[path = "shared/phys_amplification.rs"]
+mod phys_amplification;
 #[path = "shared/phys_ceilings.rs"]
 mod phys_ceilings;
 #[path = "shared/phys_derive.rs"]
@@ -504,6 +506,12 @@ fn main() {
             5.0,    // service life in years
             300.0,  // terabytes written rating for a 512 GB drive
         );
+    }
+    if run("J") {
+        // Section J: the amplification experiment. Which representation is
+        // best for reading and writing at the same time? The answer is the
+        // write amplification and the read amplification together.
+        phys_amplification::run_experiment(6_001_215, 1000, 1000);
     }
     println!("PHYSICAL-LIMITS-PROBE: COMPLETE");
 }
