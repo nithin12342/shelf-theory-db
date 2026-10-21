@@ -68,6 +68,50 @@ fn id_of(b: &[u8]) -> u64 {
     std::str::from_utf8(&b[2..]).unwrap_or("0").parse().unwrap_or(0)
 }
 
+// ---------------------------------------------------------------------------
+// N3 + B12: every section records the FINGERPRINT of the source it was
+// built from (its own generation). A changed source invalidates exactly
+// that section; the others stay valid. The bench refuses to answer from a
+// bundle whose sections are stale (it rebuilds instead).
+// ---------------------------------------------------------------------------
+fn src_of(section: &str) -> String {
+    section_sources()
+        .into_iter()
+        .find(|(n, _)| *n == section)
+        .map(|(_, p)| p)
+        .unwrap_or_default()
+}
+
+fn src_fp(path: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    if let Ok(md) = std::fs::metadata(path) {
+        let size = md.len();
+        let mtime = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0);
+        for v in [size, mtime] {
+            h ^= v;
+            h = h.wrapping_mul(0x1000_0000_01b3);
+        }
+    }
+    h
+}
+
+/// (section, source file) pairs - the per-section generation table.
+fn section_sources() -> Vec<(&'static str, String)> {
+    vec![
+        ("names", format!("{IMDB}\\name.basics.tsv")),
+        ("nameblob", format!("{IMDB}\\name.basics.tsv")),
+        ("ratings", format!("{IMDB}\\title.ratings.tsv")),
+        ("basics", format!("{IMDB}\\title.basics.tsv")),
+        ("princount", format!("{IMDB}\\title.principals.tsv")),
+        ("q2edges", format!("{IMDB}\\title.principals.tsv")),
+    ]
+}
+
 fn build() {
     let t_all = Instant::now();
     let mut w = BundleWriter::create(BUNDLE).expect("bundle create");
@@ -110,8 +154,8 @@ fn build() {
     }
     let names_ms = t0.elapsed().as_secs_f64() * 1e3;
     println!("build names: {} people in {names_ms:.0} ms", idx);
-    w.write_section("names", &name_meta).expect("names section");
-    w.write_section("nameblob", &name_blob).expect("nameblob section");
+    w.write_section_gen("names", &name_meta, src_fp(&src_of("names"))).expect("names section");
+    w.write_section_gen("nameblob", &name_blob, src_fp(&src_of("nameblob"))).expect("nameblob section");
     drop(content);
     drop(name_blob);
 
@@ -147,7 +191,7 @@ fn build() {
         rat.insert(id, (avg, votes));
     }
     println!("build ratings: {} in {:.0} ms", ratings.len() / 20, t0.elapsed().as_secs_f64() * 1e3);
-    w.write_section("ratings", &ratings).expect("ratings section");
+    w.write_section_gen("ratings", &ratings, src_fp(&src_of("ratings"))).expect("ratings section");
     drop(content);
     drop(ratings);
 
@@ -190,7 +234,7 @@ fn build() {
         basics.push(flags);
     }
     println!("build basics: {} in {:.0} ms", basics.len() / 13, t0.elapsed().as_secs_f64() * 1e3);
-    w.write_section("basics", &basics).expect("basics section");
+    w.write_section_gen("basics", &basics, src_fp(&src_of("basics"))).expect("basics section");
     drop(content);
     drop(basics);
 
@@ -240,8 +284,8 @@ fn build() {
         edges.len() / 16,
         t0.elapsed().as_secs_f64() * 1e3
     );
-    w.write_section("princount", &pc).expect("princount section");
-    w.write_section("q2edges", &edges).expect("q2edges section");
+    w.write_section_gen("princount", &pc, src_fp(&src_of("princount"))).expect("princount section");
+    w.write_section_gen("q2edges", &edges, src_fp(&src_of("q2edges"))).expect("q2edges section");
     drop(content);
     drop(pc);
     drop(edges);
@@ -252,13 +296,38 @@ fn build() {
 
 fn main() {
     let t_all = Instant::now();
-    if !std::path::Path::new(BUNDLE).exists() {
+    // Skip the build only when the bundle OPENS *and* every section is
+    // fresh (N3 + B12): a format change, a broken index, or a changed
+    // source rebuilds - a stale bundle is never answered from.
+    let mut br = match BundleReader::open(BUNDLE) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("bundle missing or unusable ({e}), rebuilding");
+            build();
+            BundleReader::open(BUNDLE).expect("bundle open after rebuild")
+        }
+    };
+    let stale: Vec<String> = section_sources()
+        .into_iter()
+        .filter(|(name, path)| br.section_gen(name) != Some(src_fp(path)))
+        .map(|(name, _)| name.to_string())
+        .collect();
+    if !stale.is_empty() {
+        println!("stale sections {stale:?} (source changed), rebuilding");
         build();
+        br = BundleReader::open(BUNDLE).expect("bundle open after rebuild");
     } else {
-        println!("bundle present, skipping build");
+        println!("bundle present and fresh, skipping build");
     }
+    let fresh_now = section_sources()
+        .into_iter()
+        .all(|(name, path)| br.section_gen(name) == Some(src_fp(&path)));
+    println!(
+        "gate_bundle_sections_fresh={} ({} sections bound to their source fingerprint)",
+        if fresh_now { "PASS" } else { "FAIL" },
+        section_sources().len()
+    );
     let t_open = Instant::now();
-    let mut br = BundleReader::open(BUNDLE).expect("bundle open");
     let open_ms = t_open.elapsed().as_secs_f64() * 1e3;
     println!("bundle open: {open_ms:.1} ms");
 

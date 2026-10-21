@@ -7,18 +7,26 @@
 //
 // Container layout (little-endian):
 //   [MAGIC u64][fmt_ver u32][n_sections u32][index_len u32][index_crc u32]
-//   [index: n_sections x (name_len u16, name, offset u64, len u64, crc32c u32)]
+//   [index: n_sections x (name_len u16, name, offset u64, len u64, crc32c u32, gen u64)]
+// B12: every section carries its own GENERATION (the producer's stamp for
+// the input that produced it). A changed input bumps ONE section's
+// generation, and only that section is rewritten - the rest of the bundle
+// is copied byte-for-byte.
 //   [payload: section bytes, sequentially written]
 // A section is fetched by offset (Kafka-style fetch(offset)) and verified
 // with its own CRC32C before use — a corrupt section fails loud, never
 // half-loads.
+// Each bench binary includes this module separately, so a helper used by
+// one bench is dead code in another.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::io::{Seek, SeekFrom, Write};
 
 use sheaf_storage::lsp::ring_wal::crc_hw;
 
 pub const MAGIC: u64 = 0x494D_4442_4649_424C; // "IMDBFIBL"
-pub const FMT_VER: u32 = 2;
+pub const FMT_VER: u32 = 3;
 pub const HEADER_LEN: usize = 24;
 
 /// One section's bytes + where it lives in the file.
@@ -28,6 +36,9 @@ pub struct SectionMeta {
     pub offset: u64,
     pub len: u64,
     pub crc: u32,
+    /// B12: per-section generation (producer's stamp for the input that
+    /// produced this section). Unchanged sections keep their generation.
+    pub gen: u64,
 }
 
 /// Writer: appends section payloads to a temp file, then writes
@@ -46,14 +57,20 @@ impl BundleWriter {
         Ok(Self { payload: file, path: path.to_string(), offset: 0, metas: Vec::new() })
     }
 
-    /// Append one section; returns its crc32c (for verification).
+    /// Append one section (generation 0).
     pub fn write_section(&mut self, name: &str, data: &[u8]) -> std::io::Result<()> {
+        self.write_section_gen(name, data, 0)
+    }
+
+    /// Append one section with its GENERATION (B12).
+    pub fn write_section_gen(&mut self, name: &str, data: &[u8], gen: u64) -> std::io::Result<()> {
         let crc = crc_hw(data);
         self.metas.push(SectionMeta {
             name: name.to_string(),
             offset: self.offset,
             len: data.len() as u64,
             crc,
+            gen,
         });
         self.payload.write_all(data)?;
         self.offset += data.len() as u64;
@@ -67,7 +84,7 @@ impl BundleWriter {
         let index_len: usize = self
             .metas
             .iter()
-            .map(|m| 2 + m.name.len() + 8 + 8 + 4)
+            .map(|m| 2 + m.name.len() + 8 + 8 + 4 + 8)
             .sum();
         let head_len = HEADER_LEN as u64 + index_len as u64;
         let mut index: Vec<u8> = Vec::with_capacity(index_len);
@@ -77,6 +94,7 @@ impl BundleWriter {
             index.extend_from_slice(&(m.offset + head_len).to_le_bytes());
             index.extend_from_slice(&m.len.to_le_bytes());
             index.extend_from_slice(&m.crc.to_le_bytes());
+            index.extend_from_slice(&m.gen.to_le_bytes());
         }
         debug_assert_eq!(index.len(), index_len);
         let index_crc = crc_hw(&index);
@@ -143,7 +161,7 @@ impl BundleReader {
             }
             let nl = u16::from_le_bytes(index[off..off + 2].try_into().unwrap()) as usize;
             off += 2;
-            if off + nl + 20 > read {
+            if off + nl + 28 > read {
                 break;
             }
             let name: String = String::from_utf8_lossy(&index[off..off + nl]).to_string();
@@ -154,7 +172,9 @@ impl BundleReader {
             off += 8;
             let c = u32::from_le_bytes(index[off..off + 4].try_into().unwrap());
             off += 4;
-            metas.insert(name.clone(), SectionMeta { name, offset: o, len: l, crc: c });
+            let g = u64::from_le_bytes(index[off..off + 8].try_into().unwrap());
+            off += 8;
+            metas.insert(name.clone(), SectionMeta { name, offset: o, len: l, crc: c, gen: g });
         }
         // verify the index itself against the stored crc (over the exact bytes)
         let index_bytes = &index[..off];
@@ -165,6 +185,23 @@ impl BundleReader {
         // them). Shifting again here seeked past the section and produced a
         // false "crc mismatch (torn write?)" — a real bug, caught by the gate.
         Ok(BundleReader { file: std::io::BufReader::new(file), metas })
+    }
+
+    /// Generation of a section (B12), if present.
+    pub fn section_gen(&self, name: &str) -> Option<u64> {
+        self.metas.get(name).map(|m| m.gen)
+    }
+
+    /// Metadata of a section (offset/len/crc/gen), if present.
+    pub fn section_meta(&self, name: &str) -> Option<&SectionMeta> {
+        self.metas.get(name)
+    }
+
+    /// All section names (sorted, deterministic).
+    pub fn section_names(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.metas.keys().cloned().collect();
+        v.sort();
+        v
     }
 
     /// Fetch one section, verify its CRC32C, return its bytes.
@@ -236,4 +273,138 @@ pub fn pc_id(b: &[u8], i: usize) -> u64 {
 pub fn pc_n(b: &[u8], i: usize) -> u32 {
     let o = i * 12 + 8;
     u32::from_le_bytes(b[o..o + 4].try_into().unwrap())
+}
+
+// ---------------------------------------------------------------------------
+// B12: incremental section rewrite. Rebuilding the whole bundle costs
+// 40.6 MB even when ONE input changed. `rewrite_sections` writes a NEW
+// bundle in which only the updated sections are re-encoded; every other
+// section is copied byte-for-byte from the old bundle.
+// ---------------------------------------------------------------------------
+
+/// One section to replace in an incremental rewrite.
+pub struct SectionUpdate {
+    pub name: String,
+    pub data: Vec<u8>,
+    pub gen: u64,
+}
+
+/// What an incremental rewrite actually did.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RewriteStats {
+    /// Sections in the resulting bundle.
+    pub sections_total: usize,
+    /// Sections that were re-encoded (the rest were copied).
+    pub sections_rewritten: usize,
+    /// Bytes re-encoded.
+    pub bytes_rewritten: u64,
+    /// Bytes copied verbatim from the old bundle.
+    pub bytes_copied: u64,
+    /// Total size of the resulting bundle.
+    pub total_bytes: u64,
+}
+
+/// Write a new bundle where only `updates` are re-encoded; every other
+/// section is copied byte-for-byte from `old_path`.
+pub fn rewrite_sections(
+    old_path: &str,
+    new_path: &str,
+    updates: &[SectionUpdate],
+) -> Result<RewriteStats, String> {
+    let reader = BundleReader::open(old_path)?;
+    let names = reader.section_names();
+    let mut metas: Vec<SectionMeta> = Vec::with_capacity(names.len());
+    for n in &names {
+        let m = reader
+            .section_meta(n)
+            .ok_or_else(|| format!("section {n} vanished"))?
+            .clone();
+        metas.push(m);
+    }
+    // New payload order: the old order, with updated sections in place.
+    let mut payloads: Vec<Option<&SectionUpdate>> = Vec::with_capacity(metas.len());
+    for m in &metas {
+        payloads.push(updates.iter().find(|u| u.name == m.name));
+    }
+    for u in updates {
+        if !metas.iter().any(|m| m.name == u.name) {
+            return Err(format!("update for unknown section '{}'", u.name));
+        }
+    }
+    let index_len: usize = metas
+        .iter()
+        .map(|m| 2 + m.name.len() + 8 + 8 + 4 + 8)
+        .sum();
+    let head_len = HEADER_LEN as u64 + index_len as u64;
+    // Compute the new layout: every section's final offset.
+    let mut new_offsets: Vec<u64> = Vec::with_capacity(metas.len());
+    let mut cursor = head_len;
+    for (i, m) in metas.iter().enumerate() {
+        new_offsets.push(cursor);
+        cursor += match &payloads[i] {
+            Some(u) => u.data.len() as u64,
+            None => m.len,
+        };
+    }
+    // The index: same names, new offsets, new crc/gen for updated sections.
+    let mut index: Vec<u8> = Vec::with_capacity(index_len);
+    let mut stats = RewriteStats {
+        sections_total: metas.len(),
+        ..Default::default()
+    };
+    for (i, m) in metas.iter().enumerate() {
+        let (crc, gen, len) = match &payloads[i] {
+            Some(u) => {
+                stats.sections_rewritten += 1;
+                stats.bytes_rewritten += u.data.len() as u64;
+                (crc_hw(&u.data), u.gen, u.data.len() as u64)
+            }
+            None => {
+                stats.bytes_copied += m.len;
+                (m.crc, m.gen, m.len)
+            }
+        };
+        index.extend_from_slice(&(m.name.len() as u16).to_le_bytes());
+        index.extend_from_slice(m.name.as_bytes());
+        index.extend_from_slice(&new_offsets[i].to_le_bytes());
+        index.extend_from_slice(&len.to_le_bytes());
+        index.extend_from_slice(&crc.to_le_bytes());
+        index.extend_from_slice(&gen.to_le_bytes());
+    }
+    debug_assert_eq!(index.len(), index_len);
+    let index_crc = crc_hw(&index);
+
+    let mut src = std::fs::File::open(old_path).map_err(|e| format!("{old_path}: {e}"))?;
+    let mut dst = std::fs::File::create(new_path).map_err(|e| format!("{new_path}: {e}"))?;
+    dst.write_all(&MAGIC.to_le_bytes())
+        .map_err(|e| format!("{new_path}: {e}"))?;
+    dst.write_all(&FMT_VER.to_le_bytes())
+        .map_err(|e| format!("{new_path}: {e}"))?;
+    dst.write_all(&(metas.len() as u32).to_le_bytes())
+        .map_err(|e| format!("{new_path}: {e}"))?;
+    dst.write_all(&(index_len as u32).to_le_bytes())
+        .map_err(|e| format!("{new_path}: {e}"))?;
+    dst.write_all(&index_crc.to_le_bytes())
+        .map_err(|e| format!("{new_path}: {e}"))?;
+    dst.write_all(&index)
+        .map_err(|e| format!("{new_path}: {e}"))?;
+    use std::io::Read;
+    for (i, m) in metas.iter().enumerate() {
+        let bytes: Vec<u8> = match &payloads[i] {
+            Some(u) => u.data.clone(),
+            None => {
+                use std::io::Seek;
+                src.seek(std::io::SeekFrom::Start(m.offset))
+                    .map_err(|e| format!("{}: seek {e}", m.name))?;
+                let mut v = vec![0u8; m.len as usize];
+                src.read_exact(&mut v)
+                    .map_err(|e| format!("{}: read {e}", m.name))?;
+                v
+            }
+        };
+        dst.write_all(&bytes).map_err(|e| format!("{new_path}: {e}"))?;
+    }
+    dst.flush().map_err(|e| format!("{new_path}: {e}"))?;
+    stats.total_bytes = cursor;
+    Ok(stats)
 }
