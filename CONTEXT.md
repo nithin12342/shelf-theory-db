@@ -184,3 +184,14 @@ so the memory idles. A controlled 1-lane vs 4-lane experiment on the same bytes 
 which is double-precision rounding over 6e6 additions). The fused structure-of-arrays
 kernel already uses four lanes and is 1.33x faster at one thread. **This is a loop-shape
 fix, not a hardware limit, and it is the next change to make.**
+
+**The remaining ceilings, now computed rather than assumed** (METHOD-054, FILE-104,
+`shared/phys_ceilings.rs`):
+
+| Ceiling | Result | Consequence for the design |
+|---|---|---|
+| Amdahl parallel speedup | 1.34x ceiling, fitted to this host's own thread scaling; measured 1.24x | **The thread lever is spent.** Do not plan around more threads. |
+| DRAM refresh | 0.128% of time, 0.008% of the external bus | Invisible. The density wall is cell leakage, not the bus. |
+| Soft errors from cosmic rays | 64 errors per month in 16 GiB, 2.13 per day; one bit survives 1.76e8 years but the module fails every 11.2 hours | **Error correction is mandatory, at a rate set by physics.** Every WAL frame already carries a CRC32C. |
+| NAND endurance | 300 terabytes-written rating exhausted in 3.2 years at 0.1 device writes per day | The write budget is 51.2 GB per day for the whole drive. The fiber bundle turns a write-heavy load into a read-only one. |
+| Landauer, Margolus-Levitin, Bekenstein, address space | 3.5e5x, 1e24x, 3e-15, 1e-7% away | Not binding. Do not design against them. |

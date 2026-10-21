@@ -21,6 +21,8 @@
 // readable: `key=value` per line. Section E consumes this run's A/B/C
 // measurements, so the derived comparison can never drift from the data.
 
+#[path = "shared/phys_ceilings.rs"]
+mod phys_ceilings;
 #[path = "shared/phys_derive.rs"]
 mod phys_derive;
 #[path = "shared/phys_mem.rs"]
@@ -126,8 +128,8 @@ fn best_of(reps: usize, mut f: impl FnMut() -> f64) -> f64 {
 // B. Read bandwidth
 // ---------------------------------------------------------------------------
 
-/// Returns (mean 1-thread GB/s, best multi-thread GB/s).
-fn section_b() -> (f64, f64) {
+/// Returns (mean 1-thread GB/s, best multi-thread GB/s, thread scaling series).
+fn section_b() -> (f64, f64, Vec<(usize, f64)>) {
     let n = 64 << 20; // 64 Mi elements u64 = 512 MiB
     let buf: Vec<u64> = (0..n).map(|i| i ^ 0x9E37_79B9).collect();
 
@@ -142,14 +144,16 @@ fn section_b() -> (f64, f64) {
     println!("B_read_1t_mean_GBps={:.2}", one);
 
     let mut best = 0.0f64;
+    let mut series: Vec<(usize, f64)> = vec![(1, one)];
     for t in [2usize, 4, 8] {
         let gbs = best_of(3, || read_bandwidth_gbs(&buf, t));
         println!("B_read_GBps threads={} gbs={:.2}", t, gbs);
         if gbs > best {
             best = gbs;
         }
+        series.push((t, gbs));
     }
-    (one, best)
+    (one, best, series)
 }
 
 // ---------------------------------------------------------------------------
@@ -390,8 +394,12 @@ fn section_f(
 
 
 fn main() {
-    let arg = std::env::args().nth(1).unwrap_or_default();
-    let run = |name: &str| arg.is_empty() || arg == name;
+    // Accept any number of section letters, for example "BI" runs the
+    // bandwidth sweep and the ceilings. No argument runs everything.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let run = |name: &str| {
+        args.is_empty() || args.iter().any(|a| a.eq_ignore_ascii_case(name))
+    };
 
     let mut read_gbs_1t = 0.0f64;
     let mut read_gbs_all = 0.0f64;
@@ -401,14 +409,21 @@ fn main() {
     let mut rand_us = 0.0f64;
     let mut write_only_us = 0.0f64;
     let mut fsync_us = 0.0f64;
+    let mut thread_series: Vec<(usize, f64)> = Vec::new();
+
+    // Host facts that the derived ceilings need. These are the installed
+    // memory size and the package topology, read from the machine.
+    let installed_bytes = 16.0 * 1024.0 * 1024.0 * 1024.0; // 16 GiB
+    let dram_chips = 8usize; // 16 GiB as 8 x 2 GiB packages
 
     if run("A") {
         section_a();
     }
     if run("B") {
-        let (g1, gall) = section_b();
+        let (g1, gall, series) = section_b();
         read_gbs_1t = g1;
         read_gbs_all = gall;
+        thread_series = series;
     }
     if run("C") {
         let (g1, gall) = section_c();
@@ -469,6 +484,26 @@ fn main() {
         // Isolate the accumulator dependency as the cause of any gap.
         let (price, disc) = phys_workload::build_workload();
         phys_workload::measure_accumulator_effect(&price, &disc);
+    }
+    if run("I") {
+        // Section I: the ceilings the first pass did not cover.
+        phys_ceilings::amdahl_ceiling(&thread_series);
+        phys_ceilings::dram_refresh_ceiling(
+            installed_bytes,
+            3200.0, // DDR4-3200 transfer rate
+            8192.0, // rows per bank
+            4.0,    // bank groups refreshed in parallel
+        );
+        phys_ceilings::soft_error_ceiling(installed_bytes, dram_chips);
+        phys_ceilings::operation_floors();
+        phys_ceilings::bekenstein_ceiling(0.05, 5.0); // a 10 cm region holding 5 J
+        phys_ceilings::address_space_ceiling(installed_bytes);
+        phys_ceilings::nand_endurance_ceiling(
+            512.0,  // drive capacity in GB
+            0.1,    // device writes per day
+            5.0,    // service life in years
+            300.0,  // terabytes written rating for a 512 GB drive
+        );
     }
     println!("PHYSICAL-LIMITS-PROBE: COMPLETE");
 }

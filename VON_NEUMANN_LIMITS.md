@@ -28,6 +28,13 @@ Rows = the physical limit. Columns = the derived floor, what this host measures,
 | L9 | HDD areal density (10-yr retention) | 1.20 Tb/in² | — | — | Thermal stability, not area |
 | L10 | Storage/DRAM latency ratio | — | 33.0× | — | Justifies pre-aggregation |
 | L11 | **Database scan vs memory ceiling** | — | **42-81% of ceiling** | — | **Gap is the accumulator, not memory** |
+| L12 | Parallel speedup ceiling (Amdahl) | 1.34-1.50x | 1.24x measured | — | Thread count is nearly exhausted |
+| L13 | DRAM refresh overhead | 0.128% of time | — | — | Self-refresh is cheap |
+| L14 | Soft error rate (cosmic rays) | 64 errors/month | — | — | **Error correction is mandatory** |
+| L15 | Quantum speed limit | 6.0e33 ops/s at 1 W | ~1e10 ops/s | 1e24× | Not the binding constraint |
+| L16 | Bekenstein information bound | 5.0e25 bits in 5 J | 1.4e11 bits | 1e14× | Not the binding constraint |
+| L17 | Address space ceiling | 2^64 bytes (2^48 canonical) | 16 GiB | 1e-7% | Not the binding constraint |
+| L18 | NAND program/erase endurance | 1000 cycles (TLC) | 1.56 of 300 TBW | — | 3.2 years to exhaust |
 
 ### 0.1 Does the database reach the memory limit? Short answer
 
@@ -40,6 +47,25 @@ floating-point accumulator per thread, so every row waits for the previous
 row's multiply-add to finish. The memory system idles while the processor
 waits. A four-lane version of the same arithmetic runs 1.47x faster on the
 same bytes.
+
+### 0.2 What is left on the table? The full list of ceilings
+
+**Rows = ceiling. Columns = the derived floor, the gap to this host, and whether
+it binds.**
+
+| Ceiling | Floor | Gap | Binds? |
+|---|---|---|---|
+| Memory bandwidth | 25.6 GB/s (1 channel) | 45% used at 1 thread | **Yes** |
+| Parallel speedup (Amdahl) | 1.34x | 1.24x measured | **Yes, nearly spent** |
+| DRAM random access | 41.2 ns | 2.24x measured | **Yes** |
+| Durable write | 1.31 ms | 1.00x measured | **Yes, at the floor** |
+| Accumulator chain | 1.47x available | 42% used at 1 thread | **Yes, fixable now** |
+| Bit-flip rate | 2 per day | n/a | **Yes, needs correction** |
+| NAND write budget | 3.2 years | 156% over 5 years | **Yes, over budget** |
+| Landauer energy | 2.87e-21 J | 3.5e5x above | No |
+| Quantum speed limit | 6.0e33 ops/s at 1 W | 1e24x away | No |
+| Bekenstein bound | 5.0e25 bits | 3e-15 used | No |
+| Address space | 2^64 bytes | 1e-7% used | No |
 
 ---
 
@@ -411,6 +437,178 @@ without the bit flipping spontaneously, so **areal density is capped by thermal 
 not by lithography**. This is why disks stopped scaling on area and started scaling
 vertically (HAMR) and in capacity-per-platter instead.
 
+### 2.8 Parallel speedup ceiling - Amdahl's law fitted to the measurement
+
+> Amdahl's law: `S(n) = 1 / ((1 - p) + p/n)`, where `p` is the fraction of
+> the work that scales with threads and `1 - p` is the fraction that does not.
+
+The repo asked "how much more can threads give?" for a long time. The answer is
+a number, and it comes from the measured thread scaling rather than from an
+assumption about the machine. For a bandwidth-bound workload the time has the
+same shape, `T(n) = T_serial + T_parallel / n`, so the measured bandwidth
+ratios give `T(1) / T(n)` directly.
+
+**Rows = thread count. Columns = the measured bandwidth and the Amdahl
+parameters that the measurement implies.**
+
+| Threads | Read (GB/s) | Time ratio | Implied serial fraction | Implied ceiling |
+|---|---|---|---|---|
+| 1 | 14.45 | 1.0000 | — | 1.00x |
+| 2 | 16.55 | 0.8731 | 0.2539 | 1.34x |
+| 4 | 16.71 | 0.8644 | 0.1808 | 1.22x |
+| 8 | 17.96 | 0.8042 | 0.2237 | 1.29x |
+
+**The ceiling is 1.34x.** The best fit implies a serial fraction of 0.25, and
+the measured 1→8 thread speedup of 1.24x sits just under the 1.34x the law
+allows. **The thread lever is nearly exhausted on this host.** More threads
+will not help; the memory bus is the wall (section 2.5 and section 3.1).
+
+This closes a long-running question in the repo. The earlier note said
+"thread scaling is NOT a lever past ~2 threads". The fitted ceiling of 1.34x
+turns that from a rule of thumb into a measured bound.
+
+### 2.9 DRAM refresh - what the memory spends on itself
+
+> Every DRAM cell leaks charge, so every row must be read and rewritten
+> before the charge is gone. The maximum refresh interval is set by the
+> ratio of stored charge to leakage current.
+
+```
+refresh time   = 64 ms
+rows per bank  = 8192,  bank groups refreshed in parallel = 4
+refresh cycle  = 4 memory clock cycles = 4 x 0.625 ns = 2.50 ns
+cycle interval = 64 ms / (8192 x 4) = 1.953 us
+overhead       = (2.50 ns x 8192 x 4) / 64 ms = 0.128 %
+```
+
+**Two traffic numbers, and the difference matters:**
+
+| Traffic | Value (GB/s) | Where it travels |
+|---|---|---|
+| Cell-level (read and rewrite every bit) | 268.4 | Inside each package, on the internal bus |
+| External bus (command and row address only) | 0.002 | Across the DDR bus to the controller |
+
+The cell-level traffic is 10x the external bus peak, which sounds alarming
+until you notice it never touches the external bus. The external cost is
+**0.008% of the bus peak**. Refresh is not a performance problem.
+
+**The retention trade is the real limit.** The refresh interval grew from
+8 ms for 1 Mbit chips to 64 ms for 256 Mbit chips, because leakage dropped
+as the cell shrank. Cells actually hold their charge for 1 to 10 seconds,
+so the 64 ms interval is set by the weakest cells on the die, not by the
+typical cell. **Shrinking a DRAM cell below the point where leakage rises
+forces a shorter refresh interval, which raises the overhead.** That is the
+density wall for DRAM, and it is a leakage wall, not a lithography wall.
+
+### 2.10 Soft errors - the bit-flip rate from space
+
+> Cosmic rays and alpha particles from package decay flip bits on their
+> own. A single event upset changes a stored value without damaging the
+> circuit.
+
+Using the IBM 1996 figure of one error per month per 256 MiB of RAM, this
+host's 16 GiB holds 64 such units:
+
+| Quantity | Value | Meaning |
+|---|---|---|
+| Errors per month | 64 | Across the whole memory |
+| Errors per day | 2.13 | Across the whole memory |
+| Mean time between flips | 11.2 hours | Anywhere in the memory |
+| Mean time for one bit | 1.76e8 years | A single bit |
+| Module mean time between errors | 2.40 years | Using the measured 5950 FIT per chip |
+
+**The gap between 11 hours and 176 million years is the whole story.** A
+single bit is almost perfectly durable, and the module still sees a flip
+every few hours, because there are 1.4e11 bits. Failures are rare per bit
+and constant per module.
+
+**This is the physical argument for error correction.** The repo already
+uses CRC32C on every WAL frame and every bundle section. That is not
+defensive programming against a rare event. It is a requirement set by
+physics, at a rate of about two bit flips per day in a 16 GiB machine.
+
+The rate also depends on altitude, because the source is cosmic rays:
+
+| Altitude (m) | Flux factor |
+|---|---|
+| 0 | 1.00x |
+| 1000 | 2.20x |
+| 2000 | 4.84x |
+| 3000 | 10.65x |
+
+A database running in a mountain data centre sees ten times the bit-flip
+rate of one at sea level.
+
+### 2.11 The floors that are NOT the limits
+
+Three universal bounds exist that no computer approaches. Listing them
+prevents a false conclusion later.
+
+**Landauer, restated for a logical operation.** Bennett (1973) showed that
+a **reversible** computation can in principle approach an arbitrarily
+small energy cost per logical operation, at the cost of extra computation
+and storage. So the Landauer figure of 2.87e-21 J is the floor for an
+**irreversible** operation, and reversible computing moves the floor
+below it. Real hardware is 3.5e5 times above it either way.
+
+**Margolus-Levitin speed limit.** A quantum system with average energy `E`
+above the ground state needs a time `tau` with `E x tau >= (pi/2) x hbar`:
+
+| Power (W) | Maximum operations per second |
+|---|---|
+| 1 | 6.0e33 |
+| 10 | 6.0e34 |
+| 100 | 6.0e35 |
+
+This host executes about 1e10 operations per second. The quantum limit is
+**24 orders of magnitude away**. It will not bind within the lifetime of
+any computer.
+
+**Bekenstein bound.** The maximum entropy in a region of radius `R` and
+energy `E` is `S <= 2 pi k R E / (hbar c)`. A 10 cm region holding 5 J
+can hold at most 5.0e25 bits. This host's 16 GiB holds 1.4e11 bits, so it
+uses 3e-15 of the bound. **The information content of the memory is not a
+physical limit.** The limit that binds is the bandwidth (section 2.5).
+
+**Address space.** A 64-bit physical address reaches 1.8e19 bytes, and the
+canonical 48-bit user space reaches 2.8e14 bytes. This host installs
+16 GiB, which is 0.000000093% of the physical space. The address space is
+not a limit either. What does limit the usable memory is the translation
+lookaside buffer: covering 16 GiB with 4 KiB pages needs 4,194,304
+entries, and the second-level buffer holds 1536. **That is the same 6 MiB
+reach measured in section 2.3, and it is the reason large pages matter.**
+
+### 2.12 NAND endurance - the write budget
+
+> Each program and erase cycle tunnels electrons through the oxide. The
+> cycle count is finite, and it is the real lifetime of a flash cell.
+
+| Cell type | Program/erase cycles |
+|---|---|
+| Single-level (SLC) | 100,000 |
+| Multi-level (MLC) | 10,000 |
+| Triple-level (TLC) | 1,000 |
+| Quad-level (QLC) | 100 |
+
+Applied to this host's 512 GB drive at 0.1 device writes per day over a
+5-year service life:
+
+| Quantity | Value |
+|---|---|
+| Daily write budget | 51.2 GB |
+| Yearly write volume | 93.50 TB |
+| Total write volume | 467.52 TB |
+| Terabytes-written rating | 300 TB |
+| Budget used | 1.56 (156%) |
+| Years to exhaust the rating | 3.2 |
+
+**The rating is exhausted in 3.2 years, not 5.** The write budget for the
+whole drive is 51.2 GB per day, and the write-ahead log shares that budget
+with everything else. This is the physical reason the repo's write-ahead
+log must be bounded, and the reason the fiber bundle cache exists: a
+bundle that is read many times and written once turns a write-heavy
+workload into a read-only one.
+
 ---
 
 ## 3. Comparing against the numbers already in this repo
@@ -491,9 +689,13 @@ Equally important, and a place where intuition is usually wrong:
 | "fsync is slow because of the OS" | 4 KiB buffered write = 3.6 µs, fsync = 1308 µs; the cost is the device's flush-to-media path, and it matches theory |
 | "The clock is the limit" | The clock is why the *ns* figures move, but the *cycle* figures are stable (L1 = 4.6, L2 = 13.7, L3 = 62.6) — and the scan is bandwidth-bound, so the shape is the same at any clock |
 | "We need more FLOPs" | The kernel is 6-9× *below* the ridge; adding FLOPs cannot help |
-| "Landauer/energy is why laptops throttle" | Landauer is 3.5e5× below CMOS; energy is a *power-delivery* limit, not an information limit |
+| "Landauer/energy is why laptops throttle" | Landauer is 3.5e5× below CMOS, and the quantum speed limit is 24 orders of magnitude away. Energy is a *power-delivery* limit, not an information limit |
 | "Large pages would fix cold random access" | Correct — and unmeasurable here: the STLB reach (6 MiB) is *below* the L3 (12 MiB), so with 4 KiB pages a TLB-resident footprint always fits in L3 |
 | "More cores would fix the bandwidth" | 4→8 threads adds 13%: the 64-bit DDR bus is 75-95% saturated, and the host has only ONE populated channel |
+| "More threads would fix the scan" | Amdahl's law fitted to the measurement gives a 1.34x ceiling. The measured 1.24x is already at it. The thread lever is spent |
+| "DRAM refresh is eating our bandwidth" | Refresh is 0.128% of the time and 0.008% of the external bus. It is invisible |
+| "Memory is too small for the data" | The address space is 0.000000093% used, and the Bekenstein bound is 3e-15 used. Capacity is not the limit |
+| "A bit flip will corrupt the database eventually" | True, and the rate is physics: about 2 bit flips per day in 16 GiB. This is why every WAL frame carries a CRC32C |
 | "GPUs would fix this" | GPUs fix it by moving the ridge (2.9 → 20..1930 FLOP/byte) via a 1024-bit memory bus, not by being faster at the same bus |
 
 ---
@@ -554,4 +756,18 @@ count, and both were what caught two wrong clock derivations during development.
 - **`landauer` uses T = 300 K** and a CMOS switching cost of ~1e-15 J, which is a
   representative rather than a measured figure for this specific part.
 - **The `d×d` kernel-intensity figures in §2.4 are analytical**, computed from the matvec
-  shape; they are not a measured profile of the shipped kernel.
+  shape. They are not a measured profile of the shipped kernel.
+- **The new ceilings in §2.8 through §2.12 are computed from published constants**, not
+  measured on this host. The only measured part is the Amdahl fit, which uses this
+  host's own thread scaling. The constants are: 5950 failures in time per DRAM chip and
+  14 neutrons per cm² per hour (Wikipedia, "Soft error"); 64 ms refresh time, 8192 rows
+  per bank and 4 cycles per refresh (Wikipedia, "Memory refresh"); 1 error per month per
+  256 MiB of RAM (IBM, 1996); 100 to 100,000 program and erase cycles by cell type
+  (Wikipedia, "Solid-state drive"); and the Landauer, Margolus-Levitin, Bekenstein and
+  Amdahl relations.
+- **The DRAM package topology is assumed, not read from the machine.** The soft error
+  figures use 8 packages of 2 GiB, and the refresh figures use 4 bank groups. A different
+  topology changes those numbers.
+- **The Amdahl fit is a single-point-per-thread-count fit.** The implied serial fraction
+  ranges from 0.18 to 0.25 across thread counts, so the ceiling of 1.34x carries that
+  spread. The measured 1.24x is inside it under every fit.

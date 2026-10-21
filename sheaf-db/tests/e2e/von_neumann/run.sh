@@ -46,4 +46,18 @@ grep -q "gate_kernels_agree=PASS" "tests/e2e/von_neumann/expected/physical_limit
 grep -q "H_utilization_of_ceiling" "tests/e2e/von_neumann/expected/physical_limits.txt"
 grep -q "H_accumulator_results_agree=true" "tests/e2e/von_neumann/expected/physical_limits.txt"
 
+# Section I: the fundamental and storage ceilings. The gates assert the
+# physics is self-consistent, and the derived numbers must be present.
+grep -q "gate_amdahl_serial_fraction_below_one=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_amdahl_ceiling_above_measured=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_refresh_overhead_under_one_pct=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "gate_soft_error_bit_outlives_module=PASS" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_amdahl_max_speedup_ceiling=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_refresh_overhead_pct=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_soft_error_dim_mtbf_years=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_op_floor_margolus_levitin_W=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_bekenstein_max_bits=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_address_canonical_max_bytes=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+grep -q "C_nand_years_to_exhaust_rating=" "tests/e2e/von_neumann/expected/physical_limits.txt"
+
 echo "VON NEUMANN LIMITS E2E: PASS"
