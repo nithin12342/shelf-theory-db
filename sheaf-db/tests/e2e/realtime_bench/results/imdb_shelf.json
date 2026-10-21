@@ -1,1 +1,1 @@
-{"q1": {"fiber_build_s": 0.24, "parse_ms": 4174.8, "query_ms": 142.7, "count": 44906, "votes": 294435444, "avg": 8.1455061756}, "q3": {"fiber_build_s": 76.80, "query_ms": 1073.1, "groups": 8}, "q2": {"fiber_build_s": 101.92, "query_ms": 428.2, "top10": 10}}
+{"q1": {"load_ms": 131.9, "query_ms": 170.3, "count": 44906, "votes": 294435444, "avg": 8.1455061756}, "q2": {"load_ms": 551.3, "query_ms": 9027.6, "top10": 11476.3222}, "q3": {"load_ms": 86.7, "query_ms": 1480.9}, "bundle_open_ms": 0.1, "wall_ms": [}
