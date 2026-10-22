@@ -30,6 +30,9 @@ use std::time::Instant;
 
 #[path = "imdb_parse.rs"]
 mod imdb_parse;
+#[path = "imdb_answers.rs"]
+pub mod imdb_answers;
+use imdb_answers::{answer_generation, AnswerShape};
 use imdb_parse::{
     parse_basics_range, parse_names_range, parse_principals_range, parse_ratings_range,
     split_ranges,
@@ -53,6 +56,8 @@ pub struct BuildPlan<'a> {
     pub imdb_dir: &'a str,
     /// The threads per stage.
     pub threads: usize,
+    /// The query shape the answer fibers are built for.
+    pub shape: AnswerShape,
 }
 
 /// Read a whole TSV file into memory.
@@ -160,8 +165,8 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     let gen = source_fingerprint(&names_path);
     sink.write_section("names", &name_meta, gen)?;
     sink.write_section("nameblob", &name_blob, gen)?;
+    let fp_names = gen;
     drop(content);
-    drop(name_blob);
 
     // ---- ratings ----
     let t0 = Instant::now();
@@ -178,9 +183,9 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     let n_rows = (ratings.len() / 20) as u64;
     reports.push(StageReport { name: "ratings", rows: n_rows, ms: ratings_ms });
     println!("build ratings: {n_rows} in {ratings_ms:.0} ms ({threads_used} threads)");
-    sink.write_section("ratings", &ratings, source_fingerprint(&ratings_path))?;
+    let fp_ratings = source_fingerprint(&ratings_path);
+    sink.write_section("ratings", &ratings, fp_ratings)?;
     drop(content);
-    drop(ratings);
 
     // ---- basics (id, year, flags) ----
     let t0 = Instant::now();
@@ -197,9 +202,9 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     let n_rows = (basics.len() / 13) as u64;
     reports.push(StageReport { name: "basics", rows: n_rows, ms: basics_ms });
     println!("build basics: {n_rows} in {basics_ms:.0} ms ({threads_used} threads)");
-    sink.write_section("basics", &basics, source_fingerprint(&basics_path))?;
+    let fp_basics = source_fingerprint(&basics_path);
+    sink.write_section("basics", &basics, fp_basics)?;
     drop(content);
-    drop(basics);
 
     // ---- principals: per-title count plus the actor and actress edges ----
     let t0 = Instant::now();
@@ -264,8 +269,41 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     sink.write_section("princount", &pc, gen)?;
     sink.write_section("q2edges", &edges, gen)?;
     drop(content);
+
+    // ---- the answer fibers: the answer to each query shape, materialised ----
+    let t0 = Instant::now();
+    let ans = imdb_answers::build_answers(
+        &plan.shape,
+        &basics,
+        &ratings,
+        &pc,
+        &name_meta,
+        &name_blob,
+        &edges,
+    );
+    let ans_gen = answer_generation(&plan.shape, &[fp_names, fp_ratings, fp_basics, gen]);
+    sink.write_section("answer_q1", &ans.q1, ans_gen)?;
+    sink.write_section("answer_q2", &ans.q2, ans_gen)?;
+    sink.write_section("answer_q3", &ans.q3, ans_gen)?;
+    println!(
+        "build answers: q1 {} B, q2 {} B, q3 {} B in {:.0} ms",
+        ans.q1.len(),
+        ans.q2.len(),
+        ans.q3.len(),
+        t0.elapsed().as_secs_f64() * 1e3
+    );
+    reports.push(StageReport {
+        name: "answers",
+        rows: ans.q1_rows + ans.q2_edges + ans.q3_buckets,
+        ms: t0.elapsed().as_secs_f64() * 1e3,
+    });
     drop(pc);
     drop(edges);
+    drop(name_meta);
+    drop(name_blob);
+    drop(ratings);
+    drop(basics);
+    drop(name_id);
 
     Ok(reports)
 }
