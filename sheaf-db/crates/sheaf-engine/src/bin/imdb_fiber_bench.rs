@@ -25,6 +25,9 @@ use std::time::Instant;
 
 #[path = "shared/imdb_fiber.rs"]
 mod imdb_fiber;
+#[path = "shared/imdb_build.rs"]
+mod imdb_build;
+use imdb_build::{BuildPlan, SectionSink};
 use imdb_fiber::{basics_flags, basics_id, basics_year, names_id, names_year, pc_id, pc_n,
                   ratings_avg, ratings_id, ratings_votes, u64_at, BundleReader, BundleWriter};
 
@@ -41,32 +44,9 @@ const MIN_AVG_Q2: f32 = 8.0;
 const PRE_Q1_MS: f64 = 4_200.0; // pre-cache: parse 1.1 GB + fiber build
 const PRE_Q2_MS: f64 = 101_920.0;
 const PRE_Q3_MS: f64 = 76_800.0;
-
-fn field(line: &[u8], want: usize) -> &[u8] {
-    let mut fs = 0usize;
-    let mut fstart = 0usize;
-    for j in 0..line.len() {
-        if line[j] == b'\t' {
-            if fs == want {
-                return &line[fstart..j];
-            }
-            fs += 1;
-            fstart = j + 1;
-        }
-    }
-    if fs == want {
-        &line[fstart..]
-    } else {
-        b""
-    }
-}
-
-fn id_of(b: &[u8]) -> u64 {
-    if b.len() < 3 {
-        return 0;
-    }
-    std::str::from_utf8(&b[2..]).unwrap_or("0").parse().unwrap_or(0)
-}
+/// The threads each build stage uses. The host has 4 physical cores and
+/// the parse is CPU-bound, so 4 is the right target.
+const BUILD_THREADS: usize = 4;
 
 // ---------------------------------------------------------------------------
 // N3 + B12: every section records the FINGERPRINT of the source it was
@@ -74,14 +54,6 @@ fn id_of(b: &[u8]) -> u64 {
 // that section; the others stay valid. The bench refuses to answer from a
 // bundle whose sections are stale (it rebuilds instead).
 // ---------------------------------------------------------------------------
-fn src_of(section: &str) -> String {
-    section_sources()
-        .into_iter()
-        .find(|(n, _)| *n == section)
-        .map(|(_, p)| p)
-        .unwrap_or_default()
-}
-
 fn src_fp(path: &str) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     if let Ok(md) = std::fs::metadata(path) {
@@ -112,188 +84,27 @@ fn section_sources() -> Vec<(&'static str, String)> {
     ]
 }
 
+/// Write the built sections into the bundle. The sink keeps the bundle
+/// writer behind a trait, so the build module never names its type.
+struct WriterSink<'a>(&'a mut BundleWriter);
+
+impl SectionSink for WriterSink<'_> {
+    fn write_section(&mut self, name: &str, data: &[u8], gen: u64) -> std::io::Result<()> {
+        self.0.write_section_gen(name, data, gen)
+    }
+}
+
 fn build() {
     let t_all = Instant::now();
     let mut w = BundleWriter::create(BUNDLE).expect("bundle create");
-
-    // ---- names: id -> (birthyear, primaryname) ----
-    let t0 = Instant::now();
-    let content = std::fs::read(format!("{IMDB}\\name.basics.tsv")).expect("names tsv");
-    let mut name_id: HashMap<u64, u32> = HashMap::with_capacity(16_000_000);
-    let mut name_meta: Vec<u8> = Vec::with_capacity(16_000_000 * 12);
-    let mut name_blob: Vec<u8> = Vec::with_capacity(220 << 20);
-    let mut start = 0usize;
-    let mut first = true;
-    let mut idx = 0u32;
-    for i in 0..content.len() {
-        if content[i] != b'\n' {
-            continue;
-        }
-        let line = &content[start..i];
-        start = i + 1;
-        if line.is_empty() {
-            continue;
-        }
-        if first {
-            first = false;
-            continue;
-        }
-        let id = id_of(field(line, 0));
-        if id == 0 {
-            continue;
-        }
-        let by = std::str::from_utf8(field(line, 2)).unwrap_or("0");
-        let by: i32 = if by.len() == 4 { by.parse().unwrap_or(0) } else { 0 };
-        let pn = field(line, 1);
-        name_id.insert(id, idx);
-        name_meta.extend_from_slice(&id.to_le_bytes());
-        name_meta.extend_from_slice(&by.to_le_bytes());
-        name_blob.extend_from_slice(pn);
-        name_blob.push(0); // NUL-terminate: the reader needs string bounds
-        idx += 1;
+    let plan = BuildPlan { imdb_dir: IMDB, threads: BUILD_THREADS };
+    {
+        let mut sink = WriterSink(&mut w);
+        imdb_build::build(&plan, &mut sink).expect("bundle build");
     }
-    let names_ms = t0.elapsed().as_secs_f64() * 1e3;
-    println!("build names: {} people in {names_ms:.0} ms", idx);
-    w.write_section_gen("names", &name_meta, src_fp(&src_of("names"))).expect("names section");
-    w.write_section_gen("nameblob", &name_blob, src_fp(&src_of("nameblob"))).expect("nameblob section");
-    drop(content);
-    drop(name_blob);
-
-    // ---- ratings ----
-    let t0 = Instant::now();
-    let content = std::fs::read(format!("{IMDB}\\title.ratings.tsv")).expect("ratings tsv");
-    let mut ratings: Vec<u8> = Vec::with_capacity(1_800_000 * 20);
-    let mut rat: HashMap<u64, (f32, i64)> = HashMap::with_capacity(1_800_000);
-    let mut start = 0usize;
-    let mut first = true;
-    for i in 0..content.len() {
-        if content[i] != b'\n' {
-            continue;
-        }
-        let line = &content[start..i];
-        start = i + 1;
-        if line.is_empty() {
-            continue;
-        }
-        if first {
-            first = false;
-            continue;
-        }
-        let id = id_of(field(line, 0));
-        if id == 0 {
-            continue;
-        }
-        let avg: f32 = std::str::from_utf8(field(line, 1)).unwrap_or("0").parse().unwrap_or(0.0);
-        let votes: i64 = std::str::from_utf8(field(line, 2)).unwrap_or("0").parse().unwrap_or(0);
-        ratings.extend_from_slice(&id.to_le_bytes());
-        ratings.extend_from_slice(&avg.to_le_bytes());
-        ratings.extend_from_slice(&votes.to_le_bytes());
-        rat.insert(id, (avg, votes));
-    }
-    println!("build ratings: {} in {:.0} ms", ratings.len() / 20, t0.elapsed().as_secs_f64() * 1e3);
-    w.write_section_gen("ratings", &ratings, src_fp(&src_of("ratings"))).expect("ratings section");
-    drop(content);
-    drop(ratings);
-
-    // ---- basics (id, year, flags) ----
-    let t0 = Instant::now();
-    let content = std::fs::read(format!("{IMDB}\\title.basics.tsv")).expect("basics tsv");
-    let mut basics: Vec<u8> = Vec::with_capacity(13_000_000 * 13);
-    let mut start = 0usize;
-    let mut first = true;
-    for i in 0..content.len() {
-        if content[i] != b'\n' {
-            continue;
-        }
-        let line = &content[start..i];
-        start = i + 1;
-        if line.is_empty() {
-            continue;
-        }
-        if first {
-            first = false;
-            continue;
-        }
-        let id = id_of(field(line, 0));
-        if id == 0 {
-            continue;
-        }
-        let ty = field(line, 1);
-        let y = std::str::from_utf8(field(line, 5)).unwrap_or("0");
-        let y: i32 = if y.len() == 4 { y.parse().unwrap_or(0) } else { 0 };
-        let g = field(line, 8);
-        let mut flags = 0u8;
-        if ty == b"movie" {
-            flags |= 1;
-        }
-        if g.windows(5).any(|w| w == b"Drama") {
-            flags |= 2;
-        }
-        basics.extend_from_slice(&id.to_le_bytes());
-        basics.extend_from_slice(&y.to_le_bytes());
-        basics.push(flags);
-    }
-    println!("build basics: {} in {:.0} ms", basics.len() / 13, t0.elapsed().as_secs_f64() * 1e3);
-    w.write_section_gen("basics", &basics, src_fp(&src_of("basics"))).expect("basics section");
-    drop(content);
-    drop(basics);
-
-    // ---- principals -> per-title count of named people + actor/actress edges ----
-    let t0 = Instant::now();
-    let content = std::fs::read(format!("{IMDB}\\title.principals.tsv")).expect("principals tsv");
-    let mut counts: HashMap<u64, u32> = HashMap::with_capacity(9_000_000);
-    let mut edges: Vec<u8> = Vec::with_capacity(64 << 20);
-    let mut start = 0usize;
-    let mut first = true;
-    for i in 0..content.len() {
-        if content[i] != b'\n' {
-            continue;
-        }
-        let line = &content[start..i];
-        start = i + 1;
-        if line.is_empty() {
-            continue;
-        }
-        if first {
-            first = false;
-            continue;
-        }
-        let tid = id_of(field(line, 0));
-        let nid = id_of(field(line, 2));
-        if tid == 0 || nid == 0 {
-            continue;
-        }
-        if !name_id.contains_key(&nid) {
-            continue;
-        }
-        *counts.entry(tid).or_insert(0) += 1;
-        let cat = field(line, 3);
-        if cat == b"actor" || cat == b"actress" {
-            edges.extend_from_slice(&nid.to_le_bytes());
-            edges.extend_from_slice(&tid.to_le_bytes());
-        }
-    }
-    let mut pc: Vec<u8> = Vec::with_capacity(counts.len() * 12);
-    for (&t, &c) in counts.iter() {
-        pc.extend_from_slice(&t.to_le_bytes());
-        pc.extend_from_slice(&c.to_le_bytes());
-    }
-    println!(
-        "build principals: {} titles, {} edges in {:.0} ms",
-        counts.len(),
-        edges.len() / 16,
-        t0.elapsed().as_secs_f64() * 1e3
-    );
-    w.write_section_gen("princount", &pc, src_fp(&src_of("princount"))).expect("princount section");
-    w.write_section_gen("q2edges", &edges, src_fp(&src_of("q2edges"))).expect("q2edges section");
-    drop(content);
-    drop(pc);
-    drop(edges);
-
     w.finish().expect("bundle finish");
     println!("bundle written: {BUNDLE} in {:.1} s", t_all.elapsed().as_secs_f64());
 }
-
 fn main() {
     let t_all = Instant::now();
     // Skip the build only when the bundle OPENS *and* every section is
