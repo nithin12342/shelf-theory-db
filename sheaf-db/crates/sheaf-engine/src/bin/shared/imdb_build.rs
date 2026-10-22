@@ -1,9 +1,9 @@
-// crates/sheaf-engine/src/bin/shared/imdb_build.rs — the IMDb bundle build.
+﻿// crates/sheaf-engine/src/bin/shared/imdb_build.rs â€” the IMDb bundle build.
 //
 // The build parses four TSV files into six binary sections. This module
 // holds the parse. The bench holds the queries and the gates.
 //
-// Three changes are in here, each with a measured basis.
+// Four changes are in here, each with a measured basis.
 //
 // 1. The field extractor scans a line ONCE and records the ranges of the
 //    wanted fields. The old helper took a wanted field index and
@@ -19,13 +19,22 @@
 //    end on a line boundary and the partial results merge in range order,
 //    so the sections are byte for byte the same as a serial build.
 //
+// 4. The reader hands newline-aligned 128 MiB blocks to the parsers while
+//    it reads the next block, so the disk read and the parse overlap. The
+//    old form read the whole file into one buffer and only then parsed it,
+//    which added the 58,958 ms read to the 23,767 ms parse instead of
+//    taking the larger of the two. The block order is the file order, so
+//    the sections stay byte for byte equal.
+//
 // The build also sorts the principal-count section by title id, because a
 // HashMap iteration order changes between processes and the section bytes
 // must be reproducible for the bundle cache to recognise its own output.
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::io::Read;
+use std::io::{BufRead, Read};
+use std::sync::mpsc;
+use std::sync::Mutex;
 use std::time::Instant;
 
 #[path = "imdb_parse.rs"]
@@ -35,7 +44,6 @@ pub mod imdb_answers;
 use imdb_answers::{answer_generation, AnswerShape};
 use imdb_parse::{
     parse_basics_range, parse_names_range, parse_principals_range, parse_ratings_range,
-    split_ranges,
 };
 
 /// The output of one stage.
@@ -60,12 +68,20 @@ pub struct BuildPlan<'a> {
     pub shape: AnswerShape,
 }
 
-/// Read a whole TSV file into memory.
-fn read_tsv(path: &str) -> std::io::Result<Vec<u8>> {
-    let mut f = std::fs::File::open(path)?;
-    let mut v = Vec::new();
-    f.read_to_end(&mut v)?;
-    Ok(v)
+/// The bytes the streaming reader hands to one parser before it refills.
+///
+/// 128 MiB keeps the in-flight set near 768 MiB with four parsers and one
+/// reader, so a 4.36 GB file no longer needs a 4.36 GB anonymous buffer.
+const READ_BLOCK: usize = 128 << 20;
+
+/// The timing a streaming stage reports.
+///
+/// `read_ms` is the time the reader spent inside the read calls and
+/// `parse_ms` is the parser time summed over all workers, so the two can
+/// exceed the stage wall when they overlap.
+struct StreamStats {
+    read_ms: f64,
+    parse_ms: f64,
 }
 
 /// The fingerprint of a source file, by size and modification time.
@@ -98,33 +114,102 @@ struct NamesPart {
     blob: Vec<u8>,
 }
 
-/// Run one stage over the content, on `threads` threads, and merge the
-/// partial results in range order.
-fn run_stage<T, F>(
-    content: &[u8],
+/// Read `path` in newline-aligned blocks and parse each block on one of
+/// `threads` workers while the reader stays ahead.
+///
+/// Every block starts and ends on a line boundary, so a parser sees whole
+/// lines and the only special case is the header in block 0. The blocks
+/// keep the file order, so the partial results merge in the same order as
+/// the range form and the sections stay byte for byte equal.
+fn stream_stage<T, F>(
+    path: &str,
     threads: usize,
     parse: F,
-) -> (Vec<T>, u64)
+) -> std::io::Result<(Vec<T>, u64, StreamStats)>
 where
-    F: Fn((usize, usize), bool) -> T + Sync,
+    F: Fn(&[u8], bool) -> T + Sync,
     T: Send,
 {
-    let ranges = split_ranges(content, threads);
-    let mut parts: Vec<(usize, T)> = Vec::with_capacity(ranges.len());
-    std::thread::scope(|s| {
-        let mut handles = Vec::with_capacity(ranges.len());
-        for (i, r) in ranges.iter().enumerate() {
-            let range = *r;
-            let skip_header = i == 0;
+    let file = std::fs::File::open(path)?;
+    let threads = threads.max(1);
+    let mut parts: Vec<(usize, T)> = Vec::new();
+    let mut stats = StreamStats { read_ms: 0.0, parse_ms: 0.0 };
+
+    let (job_tx, job_rx) = mpsc::sync_channel::<(usize, Vec<u8>)>(threads + 1);
+    let job_rx = Mutex::new(job_rx);
+    let (part_tx, part_rx) = mpsc::channel::<(usize, T, f64)>();
+
+    std::thread::scope(|s| -> std::io::Result<()> {
+        let mut workers = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            let part_tx = part_tx.clone();
+            let job_rx = &job_rx;
             let parse = &parse;
-            handles.push(s.spawn(move || (i, parse(range, skip_header))));
+            workers.push(s.spawn(move || {
+                loop {
+                    let job = match job_rx.lock() {
+                        Ok(rx) => rx.recv().ok(),
+                        Err(_) => None,
+                    };
+                    let Some((i, block)) = job else { break };
+                    let t = Instant::now();
+                    let part = parse(&block, i == 0);
+                    let busy = t.elapsed().as_secs_f64() * 1e3;
+                    drop(block);
+                    if part_tx.send((i, part, busy)).is_err() {
+                        break;
+                    }
+                }
+            }));
         }
-        for h in handles {
-            parts.push(h.join().expect("stage thread"));
+
+        // The buffer is 1 MiB because the bulk read bypasses it, and only
+        // the newline tail at a block boundary goes through it.
+        let mut reader = std::io::BufReader::with_capacity(1 << 20, file);
+        let mut idx = 0usize;
+        loop {
+            let mut block = vec![0u8; READ_BLOCK];
+            let t_read = Instant::now();
+            let mut n = 0usize;
+            while n < block.len() {
+                match reader.read(&mut block[n..]) {
+                    Ok(0) => break,
+                    Ok(k) => n += k,
+                    Err(e) => return Err(e),
+                }
+            }
+            if n == 0 {
+                break;
+            }
+            // A full block can end mid-line, so the rest of that line joins
+            // the block. The tail is one line, so its cost is one read.
+            let mut tail = Vec::new();
+            if n == block.len() {
+                reader.read_until(b'\n', &mut tail)?;
+            }
+            block.truncate(n);
+            block.extend_from_slice(&tail);
+            stats.read_ms += t_read.elapsed().as_secs_f64() * 1e3;
+            if job_tx.send((idx, block)).is_err() {
+                break;
+            }
+            idx += 1;
         }
-    });
+        drop(job_tx);
+        for w in workers {
+            w.join().expect("stream stage worker");
+        }
+        Ok(())
+    })?;
+
+    drop(part_tx);
+    for (i, part, busy) in part_rx.iter() {
+        parts.push((i, part));
+        stats.parse_ms += busy;
+    }
+
     parts.sort_by_key(|(i, _)| *i);
-    (parts.into_iter().map(|(_, v)| v).collect(), ranges.len() as u64)
+    Ok((parts.into_iter().map(|(_, v)| v).collect(), threads as u64, stats))
 }
 
 /// Build the six sections and write them through the sink.
@@ -138,10 +223,9 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     // ---- names: id -> (birth year, primary name) ----
     let t0 = Instant::now();
     let names_path = src("name.basics.tsv");
-    let content = read_tsv(&names_path)?;
-    let (parts, threads_used) = run_stage(&content, plan.threads, |range, skip| {
-        parse_names_range(&content, range, skip)
-    });
+    let (parts, threads_used, _) = stream_stage(&names_path, plan.threads, |block, skip| {
+        parse_names_range(block, (0, block.len()), skip)
+    })?;
     let mut name_id: HashMap<u64, u32> = HashMap::with_capacity(16_000_000);
     let mut name_meta: Vec<u8> = Vec::with_capacity(16_000_000 * 12);
     let mut name_blob: Vec<u8> = Vec::with_capacity(220 << 20);
@@ -166,15 +250,13 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     sink.write_section("names", &name_meta, gen)?;
     sink.write_section("nameblob", &name_blob, gen)?;
     let fp_names = gen;
-    drop(content);
 
     // ---- ratings ----
     let t0 = Instant::now();
     let ratings_path = src("title.ratings.tsv");
-    let content = read_tsv(&ratings_path)?;
-    let (parts, threads_used) = run_stage(&content, plan.threads, |range, skip| {
-        parse_ratings_range(&content, range, skip)
-    });
+    let (parts, threads_used, _) = stream_stage(&ratings_path, plan.threads, |block, skip| {
+        parse_ratings_range(block, (0, block.len()), skip)
+    })?;
     let mut ratings: Vec<u8> = Vec::with_capacity(1_800_000 * 20);
     for p in &parts {
         ratings.extend_from_slice(p);
@@ -185,15 +267,13 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     println!("build ratings: {n_rows} in {ratings_ms:.0} ms ({threads_used} threads)");
     let fp_ratings = source_fingerprint(&ratings_path);
     sink.write_section("ratings", &ratings, fp_ratings)?;
-    drop(content);
 
     // ---- basics (id, year, flags) ----
     let t0 = Instant::now();
     let basics_path = src("title.basics.tsv");
-    let content = read_tsv(&basics_path)?;
-    let (parts, threads_used) = run_stage(&content, plan.threads, |range, skip| {
-        parse_basics_range(&content, range, skip)
-    });
+    let (parts, threads_used, _) = stream_stage(&basics_path, plan.threads, |block, skip| {
+        parse_basics_range(block, (0, block.len()), skip)
+    })?;
     let mut basics: Vec<u8> = Vec::with_capacity(13_000_000 * 13);
     for p in &parts {
         basics.extend_from_slice(p);
@@ -204,21 +284,18 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     println!("build basics: {n_rows} in {basics_ms:.0} ms ({threads_used} threads)");
     let fp_basics = source_fingerprint(&basics_path);
     sink.write_section("basics", &basics, fp_basics)?;
-    drop(content);
 
     // ---- principals: per-title count plus the actor and actress edges ----
     let t0 = Instant::now();
     let principals_path = src("title.principals.tsv");
-    let content = read_tsv(&principals_path)?;
-    let t_parse = Instant::now();
-    let (parts, threads_used) = run_stage(&content, plan.threads, |range, skip| {
-        parse_principals_range(&content, range, skip, &name_id)
-    });
-    let parse_ms = t_parse.elapsed().as_secs_f64() * 1e3;
-    // The read is separate from the parse, so the I/O share of the stage is
-    // measured and not asserted. On this host the read is 62,700 to 69,200 ms
-    // against a parse of 12,700 to 14,600 ms when the file is not in cache.
-    let read_ms = (t_parse - t0).as_secs_f64() * 1e3;
+    let (parts, threads_used, stats) = stream_stage(&principals_path, plan.threads, |block, skip| {
+        parse_principals_range(block, (0, block.len()), skip, &name_id)
+    })?;
+    // The reader and the parsers run together, so the stage wall is the
+    // larger of the two and not their sum. On this host the read is 58,958 ms
+    // busy against 23,767 ms of parser CPU when the file is not in cache.
+    let read_ms = stats.read_ms;
+    let parse_ms = stats.parse_ms;
     let t_merge = Instant::now();
     let mut edges: Vec<u8> = Vec::with_capacity(64 << 20);
     // The per-thread count maps hold disjoint key sets, because every row
@@ -260,8 +337,8 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
         edges.len() / 16
     );
     println!(
-        "build principals split: read {read_ms:.0} ms, parse {parse_ms:.0} ms, merge {merge_ms:.0} ms, \
-         sort {sort_ms:.0} ms, write {} MB",
+        "build principals split: read {read_ms:.0} ms busy, parse {parse_ms:.0} ms CPU, \
+         stage {principals_ms:.0} ms, merge {merge_ms:.0} ms, sort {sort_ms:.0} ms, write {} MB",
         pc.len() >> 20
     );
     reports.push(StageReport {
@@ -272,7 +349,6 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     let gen = source_fingerprint(&principals_path);
     sink.write_section("princount", &pc, gen)?;
     sink.write_section("q2edges", &edges, gen)?;
-    drop(content);
 
     // ---- the answer fibers: the answer to each query shape, materialised ----
     let t0 = Instant::now();
