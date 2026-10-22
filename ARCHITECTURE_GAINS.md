@@ -1,5 +1,22 @@
 # Architecture improvement gains, and the timestamped record of the analysis
 
+> **CORRECTION, 2026-10-22 12:40:00.** Two figures in this document were wrong, and
+> `CODE_CHANGES_AND_EXPECTED_GAINS.md` gives the measurements that disprove them.
+>
+> 1. **The 7.14x bundle read waste does not exist.** Section 3.3 measured the analysis
+>    tool's own `std::fs::read`, not the production reader. The production reader is
+>    section-scoped and pays **14.02%** of the file, not 100%. The real cost is the
+>    CRC32C verify, which is **23.7% to 32.7%** of the load, and the fix is to fold the verify
+>    into the read for a **1.31x to 1.48x** ceiling on the load.
+> 2. **The 1.40x accumulator gain does not reach the IMDb path.** It is measured on the
+>    TPC-H scan kernel. On the IMDb Q1 path the same change measures **0.851x to
+>    0.986x**, and a 4-thread sharded version measures **0.961x to 1.059x**. The Q1
+>    path is bound by 3.2M random probes, not by the accumulator.
+>
+> The projection of the IMDb Q1 query is therefore the **answer fiber**, which measures
+> 0.058 ms to 0.093 ms against 153 ms to 174 ms. Section 4 and the tables in
+> `SEVEN_DATABASE_AREA_COMPARISON.md` are corrected accordingly.
+
 **Analysis window:** 2026-10-21 21:34:47 to 2026-10-22 09:55:00 local (Asia/Kolkata, UTC+05:30), which is 2026-10-21 16:04:47 to 2026-10-22 04:25:00 UTC.
 **Document generated:** 2026-10-22 09:55:00 local, 2026-10-22 04:25:00 UTC.
 **Commits in the window, in order:** `2c9c3c6` 21:34:47, `afd9439` 22:06:05, `26e590f` 22:11:12, `6263aad` 22:34:34, `5d53cf9` 22:35:03, `6016ae5` 2026-10-22 08:56:07, `727f742` 2026-10-22 09:36:13, `cc48af7` 2026-10-22 09:45:xx.
@@ -18,9 +35,9 @@ Rows = the improvement. Columns = the measured gain, the class of change, and th
 |---|---|---|---|---|
 | 1 | Second memory channel | **2.0x bus ceiling**, 2.65x to 4.45x on measured bandwidth | Hardware | A DIMM |
 | 2 | Four-way parallel fiber build | **112,721 ms to 28,180 ms**, a 4.00x build cut | Software | One build function |
-| 3 | Range read instead of whole-file read | **7.14x less data read** per query | Software | One function |
+| 3 | Fused CRC verify in the section read | **1.31x to 1.48x on the section load** | Software | 20 lines |
 | 4 | Pre-aggregate for Q2 and Q3 | **230x to 1,175x** and 4,120x to 20,313x | Architecture | One build per shape |
-| 5 | Four accumulators in the partition scan | **1.40x** on the 1-thread scan | Software | 10 lines |
+| 5 | Four accumulators in the partition scan | **1.40x** on the 1-thread scan, and no gain on the IMDb path | Software | 6 lines |
 | 6 | Large pages | Removes a **534 ns** walk per miss | Software | Privilege |
 | 7 | Domain sizing to the measured LLC | Removes **5.3x** over-provisioning | Software | One constant |
 
@@ -79,7 +96,7 @@ Rows = the improvement. Columns = the measured gain, the class of change, and th
 
 **This is the only improvement that changes a physical limit rather than working within it.** Every other row in section 1 multiplies against a 25.6 GB/s bus, and this one doubles the bus.
 
-**The gain compounds.** The 1,175x Q2 gain from a pre-aggregate is a bytes reduction, and it applies at any bus width. The 1.40x accumulator gain is a latency fix, and it applies at any bus width. The second channel makes both more effective, because more of the machine is fed.
+**The gain compounds.** The 1,175x Q2 gain from a pre-aggregate is a bytes reduction, and it applies at any bus width. The accumulator gain is a latency fix on the TPC-H path, and it applies at any bus width. The second channel makes both more effective, because more of the machine is fed.
 
 **The risk is zero for the code.** Adding a DIMM changes no source file. The 64 MB L3 domain assumption (section 7 of `ADVERSARIAL_ANALYSIS.md`) must also be revisited, because the domain budget is a proxy for cache capacity and a second channel does not enlarge the L3.
 
@@ -118,25 +135,30 @@ build principals: 11626391 titles, 42453755 edges in 89565 ms
 
 **The honest limit.** A parallel parse does not remove the cost of parsing 750 MB of principals text. It divides it by the core count and stops there. The structural fix is to not parse the principals text at all, which is what a pre-aggregate for Q2's shape does (section 3.4).
 
-### 3.3 The bundle read moves 7.14 times more data than the query needs
+### 3.3 The section load, and where its time goes
 
-**This was found while reading the bundle reader source.** `Bundle::open` calls `std::fs::read(path)`, which reads the **entire file**, and every section is then a slice into that one buffer. A query that needs 201.7 MB of sections therefore pays for 1,439.1 MB.
+**CORRECTION, 2026-10-22.** This section previously claimed that the bundle reader reads all 1,439,107,807 bytes for a 201,692,415-byte need, a 7.14x waste. **That claim was wrong.** The measurement behind it was of the analysis tool's own `std::fs::read`, not of the production reader.
+
+**The production reader is section-scoped.** `BundleReader::open` in `crates/sheaf-engine/src/bin/shared/imdb_fiber.rs` reads the header and the index only, and `BundleReader::section` seeks to the section offset and reads that section's bytes. The new bench `crates/sheaf-engine/src/bin/bundle_load_bench.rs` measures the real path.
 
 **Rows = measurement. Columns = value.**
 
-| Measurement | Bytes | Time (ms) | Rate (GB/s) |
-|---|---|---|---|
-| Whole-file read, cold | 1,439,107,807 | 1,165 | 1.24 |
-| Whole-file read, page cache warm | 1,439,107,807 | 1,186 | 1.21 |
-| Range read of the first 1,039,107,761 bytes | 1,039,107,761 | 1,077 | 0.96 |
-| **Bytes Q1 actually needs** | **201,692,415** | n/a | n/a |
-| **Waste ratio** | **7.14x** | | |
+| Measurement | Value |
+|---|---|
+| `BundleReader::open`, header and index only | 0.075 ms to 0.442 ms |
+| The two sections that Q1 needs | 201,692,415 B |
+| The file | 1,439,107,807 B |
+| **The share of the file that Q1 pays for** | **14.02%** |
+| The production section read, read plus verify | 120.8 ms to 137.9 ms for 201.7 MB |
+| The raw read alone | 82.5 ms to 91.9 ms, 62.5% to 69.2% of the production path, 2.20 to 2.45 GB/s |
+| The CRC32C verify alone | 32.7 ms to 43.4 ms, 23.7% to 32.7% of the production path, 4.65 to 6.17 GB/s |
+| The zero-fill of the buffer | 0.038 ms, 0.03% of the production path |
 
-**The gain.** A range read that fetches only the bytes the query needs cuts the read traffic by 7.14x. At the measured 1.24 GB/s that is 1,165 ms down to about 163 ms for the Q1 sections.
+**There is no 7.14x read waste to remove.** The reader already pays 14.02% of the file.
 
-**The gain is larger than it looks, because the read rate is the real problem.** 1.24 GB/s against a 3.20 GB/s measured uncached NVMe read and a 19.2 GB/s RAM bus means the bundle load is spending 3.8x longer than the device needs, on a file that is 1,372 MB.
+**There is a 1.31x to 1.48x verify cost to remove.** The CRC32C verify is a second pass over the same 201.7 MB, and `crc_hw` already uses the SSE4.2 instruction, so the algorithm is at its limit. The only gain is to fold the verify into the read, so the bytes are checked while they are still in the cache. The ceiling is 120.8 ms down to 84.0 ms on the quoted run, and 137.9 ms down to 89.4 ms on the slowest run, a 1.31x to 1.48x on the load.
 
-**The second pass.** The CRC32C verification is a further full read of the same bytes, at 1.85 to 5.0 GB/s (`crc_pass.rs`, using the repository's own measured rate of 8.5 to 23 ms per 42.5 MB from `CONVERSATION_LOG_2026-10-21.md` event 5). So every bundle query moves its data 2.6 to 4.5 times over. The measured loads account for only 17% of the read plus verify estimate, so the remaining time is in the file read path itself.
+**The bigger gain is to stop reading the base at all.** The answer fiber of `CODE_CHANGES_AND_EXPECTED_GAINS.md` change C1 cuts the Q1 load from 201.7 MB to 718,496 B.
 
 ### 3.4 Pre-aggregates are the gain that is not bounded by the hardware
 
@@ -193,9 +215,9 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 
 | Step | Change | Gain | Depends on the bus width? |
 |---|---|---|---|
-| 1 | Four accumulators | 1.40x | No, it is a latency fix |
+| 1 | Four accumulators | 1.40x on the TPC-H scan, 0.965x on the IMDb Q1 path | No, it is a latency fix |
 | 2 | Pre-aggregate for Q2 and Q3 | 230x to 1,175x, 4,120x to 20,313x | No, it is a bytes reduction |
-| 3 | Range read instead of whole-file read | 7.14x less traffic per query | Partly, it raises the rate toward the device limit |
+| 3 | Fused CRC verify in the section read | 1.31x to 1.48x on the section load | Partly, it removes one pass over DRAM |
 | 4 | Four-way parallel build | 4.00x faster setup | No |
 | 5 | Second memory channel | 2.0x bus ceiling | **Yes, it raises the ceiling itself** |
 
@@ -205,13 +227,13 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 
 | Measure | Now (ms) | With steps 1 to 4 (ms) | With step 5 too (ms) |
 |---|---|---|---|
-| Q1 | 197.8 | 141 | 71 |
+| Q1 | 197.8 | 0.4, the answer fiber | 494x |
 | Q2 | 18,333.3 | 15.6 to 79.7 | 7.8 to 39.9 |
 | Q3 | 1,746.9 | 0.086 to 0.424 | 0.043 to 0.212 |
-| Suite, cached | 21,180.2 | 157.0 to 221.4 | 78.5 to 110.7 |
+| Suite, cached | 21,180.2 | 16.1 to 80.5 | 8.1 to 40.3 |
 | Setup, build | 51,100 to 112,721 | 28,180 | 28,180 |
 
-**The suite wall drops by 96x to 135x.** The setup gap against DuckDB goes from 511x to 282x with the parallel build, and to 128x at a full 4x on the whole build.
+**The suite wall drops by 263x to 1,315x.** The setup gap against DuckDB goes from 511x to 282x with the parallel build, and to 128x at a full 4x on the whole build.
 
 **These projections rest on the measured floors, and the models that produced them do not reproduce the real code.** The Q1 and Q2 models are 1.6x to 6.4x off the measured times (`ADVERSARIAL_ANALYSIS.md` section 4.2 and 4.3). The projections are therefore stated as a direction and an order of magnitude, not as a promise.
 
@@ -237,7 +259,7 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 - **The projections in section 4 are projections.** The measured floors are measurements, and the models that produced them do not reproduce the real code.
 - **The second memory channel is a hardware change**, not a code change, and this host has one populated module. The gain is derived from the measured bus peak and the measured 25.6 GB/s ceiling, not from a second host.
 - **The parallel build gain assumes perfect scaling**, which a byte-range parse does not achieve. The 4.0x figure is an upper bound, and a realistic figure is lower.
-- **The range read gain assumes the file system serves a range read at the same rate as a whole-file read.** The measurement above shows 0.96 GB/s for a range read against 1.24 GB/s for the whole file, so the rate is slightly lower and the gain is slightly under 7.14x.
+- **The fused verify gain is a ceiling.** The verify is already at the hardware limit, so the gain comes from removing the second pass over DRAM, not from a faster algorithm. The measured ceiling is 1.31x to 1.48x on the load.
 - **Large pages need privilege** that this host does not grant. The 534.4 ns walk cost is derived from the measured DRAM latency and the standard four-level walk, not from a direct measurement on this host.
 - **The IMDb bundle was rebuilt and restored during the analysis.** The per-stage build times in section 3.2 are from that rebuild, and the restored bundle was re-verified by a full bench run.
 
@@ -248,10 +270,11 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 | Claim | Where it is verified |
 |---|---|
 | The four architecture improvement measurements | `tests/e2e/von_neumann/tools/arch_gains.rs` |
-| The whole-file read and the 7.14x waste | `Bundle::open` in `shared/fiber_snapshot.rs`, plus `arch_gains.rs` C1 |
+| The section load split and the 14.02% file share | `crates/sheaf-engine/src/bin/bundle_load_bench.rs`, the `LOAD_` lines |
 | The per-stage build times | `imdb_fiber_bench` stdout, rebuild forced 2026-10-22 09:52 |
 | The bus peak and the 25.6 GB/s ceiling | `mt_scan_bench` 48 MB in 2.5 ms, and the probe's DRAM peak |
-| The 1.40x accumulator gain | `physical_limits_probe` section H |
+| The 1.40x accumulator gain on the TPC-H scan | `physical_limits_probe` section H |
+| The 0.965x accumulator result on the IMDb Q1 path | `crates/sheaf-engine/src/bin/q1_kernel_bench.rs`, the `Q1KB_` lines |
 | The 230x to 1,175x and 4,120x to 20,313x pre-aggregate gains | `tools/q2_decompose.rs` PART5 and PART6, 8 runs |
 | The 534.4 ns page walk | Derived from the probe's 133.61 ns DRAM latency and the 1536-entry STLB |
 | The CRC second pass | `tools/crc_pass.rs`, using the repository's 8.5 to 23 ms per 42.5 MB |

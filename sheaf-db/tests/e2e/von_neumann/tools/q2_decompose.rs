@@ -133,4 +133,71 @@ fn main() {
             ms / q2_floor
         );
     }
+
+    // ---- PART 7: the BUILD cost of a pre-sorted pre-aggregate ----
+    // The pre-aggregate has 15,738,257 rows of (name_id u64, count u32).
+    // A pre-sorted section holds only the top K, so the query reads 160 B
+    // instead of 251,812,112 B. The price is the selection, paid once.
+    const AGG_ROW_FULL: usize = 16; // name_id u64, count u32, pad u32
+    let mut agg_full: Vec<u8> = vec![0u8; AGG_ROWS as usize * AGG_ROW_FULL];
+    for i in 0..AGG_ROWS as usize {
+        let nid = (i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let c = ((i % 5000) as u32).wrapping_mul(3_103);
+        agg_full[i * AGG_ROW_FULL..i * AGG_ROW_FULL + 8]
+            .copy_from_slice(&nid.to_le_bytes());
+        agg_full[i * AGG_ROW_FULL + 8..i * AGG_ROW_FULL + 12]
+            .copy_from_slice(&c.to_le_bytes());
+    }
+    let t = Instant::now();
+    let mut heap: Vec<(u32, u64)> = Vec::with_capacity(10);
+    for i in 0..AGG_ROWS {
+        let off = i as usize * AGG_ROW_FULL;
+        let c = u32::from_le_bytes([
+            agg_full[off + 8],
+            agg_full[off + 9],
+            agg_full[off + 10],
+            agg_full[off + 11],
+        ]);
+        let nid = u64::from_le_bytes([
+            agg_full[off],
+            agg_full[off + 1],
+            agg_full[off + 2],
+            agg_full[off + 3],
+            agg_full[off + 4],
+            agg_full[off + 5],
+            agg_full[off + 6],
+            agg_full[off + 7],
+        ]);
+        if heap.len() < 10 {
+            heap.push((c, nid));
+            heap.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        } else if c > heap[0].0 {
+            heap[0] = (c, nid);
+            heap.sort_unstable_by(|a, b| b.0.cmp(&a.0));
+        }
+    }
+    let select_ms = t.elapsed().as_secs_f64() * 1e3;
+    std::hint::black_box(&heap);
+    let top_bytes = 10 * 16;
+    println!(
+        "Q2_PART7 presorted_selection rows={AGG_ROWS} bytes={} ms={select_ms:.1} gbs={:.2}",
+        AGG_ROWS as usize * AGG_ROW_FULL,
+        (AGG_ROWS as usize * AGG_ROW_FULL) as f64 / select_ms / 1e6
+    );
+    println!(
+        "Q2_PART7 presorted_section_bytes={top_bytes} (the query reads this, not 251,812,112 B)"
+    );
+    // The presorted query floor: 160 B read plus 10 name probes.
+    let presorted_query_ms = 10.0 * 133.61 / 1e6;
+    println!(
+        "Q2_PART7 presorted_query_ms={presorted_query_ms:.4} (10 rows plus 10 name probes)"
+    );
+    println!(
+        "Q2_PART7 presorted_gain_vs_measured={:.0}x",
+        Q2_MEASURED_MS / presorted_query_ms
+    );
+    println!(
+        "Q2_PART7 presorted_build_pays_back_after_queries={:.3}",
+        select_ms / (Q2_MEASURED_MS - presorted_query_ms)
+    );
 }

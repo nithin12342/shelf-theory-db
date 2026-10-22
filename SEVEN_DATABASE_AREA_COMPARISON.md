@@ -1,5 +1,19 @@
 # The shelf database against the seven, area by area, current and projected
 
+> **CORRECTION, 2026-10-22 12:40:00.** Two figures in this document were wrong, and
+> `CODE_CHANGES_AND_EXPECTED_GAINS.md` gives the measurements that disprove them.
+>
+> 1. **The projected Q1 query was 141.3 ms from the 4-accumulator fix. That fix does
+>    not apply to this path.** The 1.40x was measured on the TPC-H scan kernel. On the
+>    IMDb Q1 path the same change measures 0.851x to 0.986x, and a 4-thread sharded
+>    version measures 0.961x to 1.059x. The projection is now the **answer fiber**,
+>    which measures 0.058 ms to 0.093 ms against 153 ms to 174 ms.
+> 2. **There is no 7.14x bundle read waste.** The production reader is already
+>    section-scoped and pays 14.02% of the file. The real cost is the CRC32C verify,
+>    which is 23.7% to 32.7% of the load.
+>
+> The current values in every table are unchanged. Only the projected values move.
+
 **Report timestamp:** 2026-10-22 11:20:00 local (Asia/Kolkata, UTC+05:30), which is 2026-10-22 05:50:00 UTC.
 **Analysis window covered:** 2026-10-21 21:34:47 to 2026-10-22 11:20:00 local, which is 2026-10-21 16:04:47 to 2026-10-22 05:50:00 UTC.
 **Companion documents:** `ADVERSARIAL_ANALYSIS.md` (the three attacks), `ARCHITECTURE_GAINS.md` (the improvement candidates and the timestamped record), `SHELF_DATA_REPRESENTATION_REPORT.md` (the representation question), `VON_NEUMANN_LIMITS.md` (the 18 physical limits), `PROJECTION_THEORETICAL_MAXIMUM.md` (the earlier projection, since corrected), `RUNTIME_COMPARISON.md` (the existing comparison).
@@ -245,7 +259,8 @@ Shelf total is the build plus the Q1 section load plus the Q1 query: 51,100 + 15
 
 | Projection | Now | Projected | Floor and its basis | Class |
 |---|---|---|---|---|
-| P1, IMDb Q1 with a 4-accumulator scan, same data | 197.8 ms | **141.3 ms** | The measured 1.40x gain of the 4-lane scan over the 1-lane scan, probe section H | Measured gain |
+| P1, IMDb Q1 with an answer fiber | 197.8 ms | **0.35 ms to 0.38 ms** | The measured answer-fiber read of 44,906 rows at 0.058 ms to 0.093 ms, plus the 718,496 B section read | Measured gain |
+| P1a, IMDb Q1 with a 4-accumulator scan, same data | 197.8 ms | **no gain** | The 4-lane gain is 0.851x to 0.986x on this path, because the Q1 path is bound by random probes, not by the accumulator | Measured result |
 | P1, IMDb suite wall | 21,180.2 ms | **20,221.5 ms** | The P1 Q1 value plus the unchanged Q2 and Q3 | Measured gain |
 | P2, IMDb Q2 with a pre-aggregate | 18,333.3 ms | **15.6 ms to 79.7 ms** | The measured pre-aggregated scan of 15,738,257 rows and 251,812,112 bytes, 8 runs at 3.16 to 16.14 GB/s | Measured floor |
 | P2, IMDb Q3 with a pre-aggregate | 1,746.9 ms | **0.086 ms to 0.424 ms** | The measured answer-fiber read of the same 44,906-row answer set, 8 runs | Derived bound |
@@ -254,7 +269,7 @@ Shelf total is the build plus the Q1 section load plus the Q1 query: 51,100 + 15
 | P3, IMDb suite wall | 21,180.2 ms | **15.8 ms to 80.5 ms** | The sum of the P3 values | Measured floor |
 | Setup, bundle build, 4-way parallel parse | 51,100 ms to 112,721 ms | **28,180 ms** | The measured build stages, names 11,440 ms, ratings 548 ms, basics 11,168 ms, principals 89,565 ms, divided by 4 cores | Measured stages, modelled scaling |
 | TPC-H join, with the answer fiber | 7.9 ms | 7.9 ms | **Already at the floor** | Measured |
-| TPC-H scan plus aggregate | 4.0 ms | **2.9 ms** | 48.0 MB at the measured 19.2 GB/s bus peak, with the 1.40x accumulator gain | Derived from a measured peak |
+| TPC-H scan plus aggregate | 4.0 ms | **2.9 ms** | 48.0 MB at the measured 19.2 GB/s bus peak, with the 1.40x accumulator gain on the scan kernel | Derived from a measured peak |
 | Point lookup, in-process | 10.5 ns | 10.5 ns | **Already at the floor** | Measured |
 | Durable point write | 6.9 µs | 6.9 µs | The path does not sync per operation, so the floor is the syscall path, not physics | Measured |
 | Traversal, 600,000 paths | 41.7 ms | 41.7 ms | **Already at the floor** | Measured |
@@ -284,20 +299,20 @@ The projected shelf total is the 28,180 ms parallel build plus the P2 suite wall
 
 ### Table 13: The projected query-time comparison
 
-**Rows = architecture. Columns = the opponent query time and the projected shelf query time.**
+**Rows = architecture. Columns = the opponent query time and the projected shelf query time. The projection is the answer fiber, so it needs the build of `CODE_CHANGES_AND_EXPECTED_GAINS.md` change C1.**
 
 | Architecture | Opponent query (ms) | Shelf now (ms) | Shelf projected (ms) | Projected margin |
 |---|---|---|---|---|
-| DuckDB | 345.7 | 197.8 | **141.3** | **2.45x faster** |
-| Redis | 255.5 | 197.8 | 141.3 | 1.81x faster |
-| ScyllaDB | 208.3 | 197.8 | 141.3 | 1.47x faster |
-| ScyllaDB (CQL) | 271.1 | 197.8 | 141.3 | 1.92x faster |
-| SQLite | 757.5 | 197.8 | 141.3 | **5.36x faster** |
-| MariaDB | 970.9 | 197.8 | 141.3 | **6.87x faster** |
-| Neo4j | 1,089.5 | 197.8 | 141.3 | **7.71x faster** |
-| PostgreSQL | 1,918.1 | 197.8 | 141.3 | **13.58x faster** |
+| DuckDB | 345.7 | 197.8 | **0.4** | **864x faster** |
+| Redis | 255.5 | 197.8 | 0.4 | 639x faster |
+| ScyllaDB | 208.3 | 197.8 | 0.4 | 521x faster |
+| ScyllaDB (CQL) | 271.1 | 197.8 | 0.4 | 678x faster |
+| SQLite | 757.5 | 197.8 | 0.4 | **1,894x faster** |
+| MariaDB | 970.9 | 197.8 | 0.4 | **2,427x faster** |
+| Neo4j | 1,089.5 | 197.8 | 0.4 | **2,724x faster** |
+| PostgreSQL | 1,918.1 | 197.8 | 0.4 | **4,795x faster** |
 
-**On query time the shelf database wins every area, and the projections widen every margin.** The 1.05x against ScyllaDB becomes 1.47x.
+**On query time the shelf database wins every area, and the projections widen every margin.** The 1.05x against ScyllaDB becomes 521x. The projected Q1 value of 0.4 ms is the answer fiber, which needs a build. Without the build the projection is the current 197.8 ms.
 
 ---
 
@@ -312,8 +327,9 @@ The projected shelf total is the 28,180 ms parallel build plus the P2 suite wall
 | **The raw analytical join** | The join runs at query time. The TPC-H raw join is 2,500 ms against DuckDB's 158.3 ms. | Use the fiber path, which measures 3.2 ms to 7.9 ms | **20.0x to 49.5x faster than DuckDB** |
 | **The durable point write** | 6.9 µs against SQLite's 2.1 µs. The epoch path does one flush with no seeks. | Move the durability boundary. The write-ahead log costs 130 ns per operation in batch mode. | 2.1 µs to 6.9 µs range, needs work |
 | **The setup cost** | 51,100 ms to 112,721 ms against DuckDB's 100 ms. The build is 79.5% one character-level parse. | 4-way parallel parse over byte ranges | **28,180 ms**, a 1.81x cut from the benchmark build and a 4.00x cut from the full rebuild |
-| **The bundle read** | `std::fs::read` reads all 1,439,107,807 bytes for a 201,692,415-byte need. | Range read | **7.14x less traffic** |
-| **The one-thread scan** | A single f64 accumulator serializes every row. | 4 accumulators | **1.40x** |
+| **The section load** | The reader is already section-scoped and pays 14.02% of the file, not 100%. The CRC32C verify is 23.7% to 32.7% of the load and runs as a second pass. | Fold the verify into the read | **1.31x to 1.48x on the load** |
+| **The Q1 join** | The Q1 path is bound by 3.2M random probes into a 1.72M-entry map, not by the accumulator or by the thread count. | Build the answer fiber | **1,646x to 3,003x on the query** |
+| **The one-thread scan** | A single f64 accumulator serializes every row of the TPC-H scan. | 4 accumulators | **1.40x on the TPC-H scan**, and no gain on the IMDb path |
 | **The Q2 and Q3 shapes** | Both resolve their join at query time, over 6.4M and 12.9M-row edge sets. | Build the pre-aggregate, which the domain model already supports | **230x to 1,175x** on Q2 |
 
 ---
@@ -371,7 +387,9 @@ The projected shelf total is the 28,180 ms parallel build plus the P2 suite wall
 | The shelf's durable write | `results/wal_insert.json`, 6.9 µs p50 |
 | The measured pre-aggregate and answer-fiber floors | `tools/q2_decompose.rs` PART5, `tools/q1_decompose.rs` PART4, 8 runs each |
 | The break-even | `tools/q1_decompose.rs` PART6 |
-| The 1.40x accumulator gain | `physical_limits_probe` section H |
+| The 1.40x accumulator gain on the TPC-H scan | `physical_limits_probe` section H |
+| The answer-fiber gain and the 0.965x accumulator result on IMDb | `crates/sheaf-engine/src/bin/q1_kernel_bench.rs`, the `Q1KB_` lines |
+| The section load split | `crates/sheaf-engine/src/bin/bundle_load_bench.rs`, the `LOAD_` lines |
 | The build stages | `imdb_fiber_bench` stdout, forced rebuild 2026-10-22 |
 | The bundle read waste | `tools/arch_gains.rs` C1, and `Bundle::open` in `shared/fiber_snapshot.rs` |
 | The existing seven-database comparison | `RUNTIME_COMPARISON.md` |

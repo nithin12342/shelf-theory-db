@@ -337,10 +337,12 @@ ShelfDB total is its bundle build plus its Q1 section load plus its Q1 query. Th
 
 | Query | Now (ms) | After (ms) | Gain |
 |---|---|---|---|
-| Q1 | 197.8 | 141.3, the measured 1.40x accumulator gain | 1.40x |
+| Q1 | 197.8 | 0.35 to 0.38, the measured answer fiber | 903x to 994x |
 | Q2 | 18,333.3 | 15.6 to 79.7 | 230x to 1,175x |
 | Q3 | 1,746.9 | 0.086 to 0.424 | 4,120x to 20,313x |
-| Suite wall, cached | 21,180.2 | 157.0 to 221.4 | 96x to 135x |
+| Suite wall, cached | 21,180.2 | 16.1 to 80.5 | 263x to 1,315x |
+
+**CORRECTION, 2026-10-22.** The Q1 row previously read "141.3, the measured 1.40x accumulator gain". The 1.40x was measured on the TPC-H scan kernel, and it does not reach this path. The bench `crates/sheaf-engine/src/bin/q1_kernel_bench.rs` measures the same change on the IMDb Q1 path at 0.851x to 0.986x, and a 4-thread sharded version at 0.961x to 1.059x. The Q1 projection is the answer fiber, at 0.058 ms to 0.093 ms against 153 ms to 174 ms. See `CODE_CHANGES_AND_EXPECTED_GAINS.md`.
 
 ### 7.1 What can make it even better, beyond the measurable list
 
