@@ -37,7 +37,7 @@ mod imdb_fiber;
 #[path = "shared/imdb_build.rs"]
 mod imdb_build;
 use imdb_build::imdb_answers::{read_answer_q1, read_answer_q2, read_answer_q3, AnswerShape};
-use imdb_build::{BuildPlan, SectionSink};
+use imdb_build::{BuildPlan, SectionSink, SectionSource};
 use imdb_fiber::{basics_flags, basics_id, basics_year, names_id, names_year, pc_id, pc_n,
                   ratings_avg, ratings_id, ratings_votes, u64_at, BundleReader, BundleWriter};
 
@@ -138,14 +138,41 @@ impl SectionSink for WriterSink<'_> {
 
 fn build() {
     let t_all = Instant::now();
+    // Take the fresh sections before the writer truncates the bundle. A
+    // stale section is not taken, so its stage parses its source file.
+    let mut keep: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    if let Ok(mut br) = BundleReader::open(BUNDLE) {
+        for (name, path) in section_sources() {
+            if br.section_gen(name) == Some(src_fp(&path)) {
+                if let Ok(b) = br.section(name) {
+                    keep.insert(name.to_string(), b);
+                }
+            }
+        }
+    }
+    if !keep.is_empty() {
+        let mut names: Vec<&str> = keep.keys().map(|s| s.as_str()).collect();
+        names.sort_unstable();
+        println!("reuse sections {names:?}");
+    }
+    let reuse = Reuse(std::cell::RefCell::new(keep));
     let mut w = BundleWriter::create(BUNDLE).expect("bundle create");
     let plan = BuildPlan { imdb_dir: IMDB, threads: BUILD_THREADS, shape: SHAPE };
     {
         let mut sink = WriterSink(&mut w);
-        imdb_build::build(&plan, &mut sink).expect("bundle build");
+        imdb_build::build(&plan, &reuse, &mut sink).expect("bundle build");
     }
     w.finish().expect("bundle finish");
     println!("bundle written: {BUNDLE} in {:.1} s", t_all.elapsed().as_secs_f64());
+}
+
+/// The fresh sections taken from the bundle before the writer truncates it.
+struct Reuse(std::cell::RefCell<std::collections::HashMap<String, Vec<u8>>>);
+
+impl SectionSource for Reuse {
+    fn take_fresh(&self, name: &str) -> Option<Vec<u8>> {
+        self.0.borrow_mut().remove(name)
+    }
 }
 fn main() {
     let t_all = Instant::now();

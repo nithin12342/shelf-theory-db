@@ -58,6 +58,28 @@ pub trait SectionSink {
     fn write_section(&mut self, name: &str, data: &[u8], gen: u64) -> std::io::Result<()>;
 }
 
+/// A source of sections that are already fresh.
+///
+/// The build takes a fresh section instead of parsing its source file, so a
+/// change to one file rebuilds only the sections that file feeds. The bytes
+/// move out of the source, because the build would otherwise hold a copy.
+pub trait SectionSource {
+    fn take_fresh(&self, name: &str) -> Option<Vec<u8>>;
+}
+
+/// The id to index map that the principals parse needs, rebuilt from the
+/// names section when that section was taken fresh.
+fn name_index(meta: &[u8]) -> HashMap<u64, u32> {
+    let n = meta.len() / 12;
+    let mut map = HashMap::with_capacity(n);
+    for i in 0..n {
+        let at = i * 12;
+        let id = u64::from_le_bytes(meta[at..at + 8].try_into().unwrap());
+        map.insert(id, i as u32);
+    }
+    map
+}
+
 /// The build parameters.
 pub struct BuildPlan<'a> {
     /// The directory that holds the TSV files.
@@ -216,37 +238,58 @@ where
 ///
 /// The order is fixed: names, then ratings, then basics, then principals.
 /// The principals stage needs the name index, so it must come last.
-pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Vec<StageReport>> {
+pub fn build(
+    plan: &BuildPlan,
+    reuse: &dyn SectionSource,
+    sink: &mut dyn SectionSink,
+) -> std::io::Result<Vec<StageReport>> {
     let mut reports: Vec<StageReport> = Vec::new();
     let src = |s: &str| format!("{}\\{}", plan.imdb_dir, s);
 
     // ---- names: id -> (birth year, primary name) ----
     let t0 = Instant::now();
     let names_path = src("name.basics.tsv");
-    let (parts, threads_used, _) = stream_stage(&names_path, plan.threads, |block, skip| {
-        parse_names_range(block, (0, block.len()), skip)
-    })?;
-    let mut name_id: HashMap<u64, u32> = HashMap::with_capacity(16_000_000);
-    let mut name_meta: Vec<u8> = Vec::with_capacity(16_000_000 * 12);
-    let mut name_blob: Vec<u8> = Vec::with_capacity(220 << 20);
-    let mut idx = 0u32;
-    for part in &parts {
-        for &(id, by) in &part.records {
-            name_id.insert(id, idx);
-            name_meta.extend_from_slice(&id.to_le_bytes());
-            name_meta.extend_from_slice(&by.to_le_bytes());
-            idx += 1;
-        }
-        name_blob.extend_from_slice(&part.blob);
-    }
-    let names_ms = t0.elapsed().as_secs_f64() * 1e3;
-    let n_rows = idx as u64;
-    reports.push(StageReport { name: "names", rows: n_rows, ms: names_ms });
-    println!(
-        "build names: {} people in {names_ms:.0} ms ({} threads)",
-        n_rows, threads_used
-    );
     let gen = source_fingerprint(&names_path);
+    // The id index is only needed by the principals parse, so a fresh names
+    // section rebuilds it at that point and not before.
+    let mut name_map: Option<HashMap<u64, u32>> = None;
+    let (name_meta, name_blob, reused) =
+        match (reuse.take_fresh("names"), reuse.take_fresh("nameblob")) {
+            (Some(meta), Some(blob)) => (meta, blob, true),
+            _ => {
+                let (parts, threads_used, _) =
+                    stream_stage(&names_path, plan.threads, |block, skip| {
+                        parse_names_range(block, (0, block.len()), skip)
+                    })?;
+                let mut map: HashMap<u64, u32> = HashMap::with_capacity(16_000_000);
+                let mut meta: Vec<u8> = Vec::with_capacity(16_000_000 * 12);
+                let mut blob: Vec<u8> = Vec::with_capacity(220 << 20);
+                let mut idx = 0u32;
+                for part in &parts {
+                    for &(id, by) in &part.records {
+                        map.insert(id, idx);
+                        meta.extend_from_slice(&id.to_le_bytes());
+                        meta.extend_from_slice(&by.to_le_bytes());
+                        idx += 1;
+                    }
+                    blob.extend_from_slice(&part.blob);
+                }
+                println!(
+                    "build names: {} people in {:.0} ms ({} threads)",
+                    idx,
+                    t0.elapsed().as_secs_f64() * 1e3,
+                    threads_used
+                );
+                name_map = Some(map);
+                (meta, blob, false)
+            }
+        };
+    let names_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let n_rows = (name_meta.len() / 12) as u64;
+    if reused {
+        println!("reuse names: {n_rows} people in {names_ms:.0} ms");
+    }
+    reports.push(StageReport { name: "names", rows: n_rows, ms: names_ms });
     sink.write_section("names", &name_meta, gen)?;
     sink.write_section("nameblob", &name_blob, gen)?;
     let fp_names = gen;
@@ -254,99 +297,144 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     // ---- ratings ----
     let t0 = Instant::now();
     let ratings_path = src("title.ratings.tsv");
-    let (parts, threads_used, _) = stream_stage(&ratings_path, plan.threads, |block, skip| {
-        parse_ratings_range(block, (0, block.len()), skip)
-    })?;
-    let mut ratings: Vec<u8> = Vec::with_capacity(1_800_000 * 20);
-    for p in &parts {
-        ratings.extend_from_slice(p);
-    }
+    let fp_ratings = source_fingerprint(&ratings_path);
+    let (ratings, reused) = match reuse.take_fresh("ratings") {
+        Some(b) => (b, true),
+        None => {
+            let (parts, threads_used, _) =
+                stream_stage(&ratings_path, plan.threads, |block, skip| {
+                    parse_ratings_range(block, (0, block.len()), skip)
+                })?;
+            let mut v: Vec<u8> = Vec::with_capacity(1_800_000 * 20);
+            for p in &parts {
+                v.extend_from_slice(p);
+            }
+            println!(
+                "build ratings: {} in {:.0} ms ({threads_used} threads)",
+                v.len() / 20,
+                t0.elapsed().as_secs_f64() * 1e3
+            );
+            (v, false)
+        }
+    };
     let ratings_ms = t0.elapsed().as_secs_f64() * 1e3;
     let n_rows = (ratings.len() / 20) as u64;
+    if reused {
+        println!("reuse ratings: {n_rows} rows in {ratings_ms:.0} ms");
+    }
     reports.push(StageReport { name: "ratings", rows: n_rows, ms: ratings_ms });
-    println!("build ratings: {n_rows} in {ratings_ms:.0} ms ({threads_used} threads)");
-    let fp_ratings = source_fingerprint(&ratings_path);
     sink.write_section("ratings", &ratings, fp_ratings)?;
 
     // ---- basics (id, year, flags) ----
     let t0 = Instant::now();
     let basics_path = src("title.basics.tsv");
-    let (parts, threads_used, _) = stream_stage(&basics_path, plan.threads, |block, skip| {
-        parse_basics_range(block, (0, block.len()), skip)
-    })?;
-    let mut basics: Vec<u8> = Vec::with_capacity(13_000_000 * 13);
-    for p in &parts {
-        basics.extend_from_slice(p);
-    }
+    let fp_basics = source_fingerprint(&basics_path);
+    let (basics, reused) = match reuse.take_fresh("basics") {
+        Some(b) => (b, true),
+        None => {
+            let (parts, threads_used, _) =
+                stream_stage(&basics_path, plan.threads, |block, skip| {
+                    parse_basics_range(block, (0, block.len()), skip)
+                })?;
+            let mut v: Vec<u8> = Vec::with_capacity(13_000_000 * 13);
+            for p in &parts {
+                v.extend_from_slice(p);
+            }
+            println!(
+                "build basics: {} in {:.0} ms ({threads_used} threads)",
+                v.len() / 13,
+                t0.elapsed().as_secs_f64() * 1e3
+            );
+            (v, false)
+        }
+    };
     let basics_ms = t0.elapsed().as_secs_f64() * 1e3;
     let n_rows = (basics.len() / 13) as u64;
+    if reused {
+        println!("reuse basics: {n_rows} rows in {basics_ms:.0} ms");
+    }
     reports.push(StageReport { name: "basics", rows: n_rows, ms: basics_ms });
-    println!("build basics: {n_rows} in {basics_ms:.0} ms ({threads_used} threads)");
-    let fp_basics = source_fingerprint(&basics_path);
     sink.write_section("basics", &basics, fp_basics)?;
 
     // ---- principals: per-title count plus the actor and actress edges ----
     let t0 = Instant::now();
     let principals_path = src("title.principals.tsv");
-    let (parts, threads_used, stats) = stream_stage(&principals_path, plan.threads, |block, skip| {
-        parse_principals_range(block, (0, block.len()), skip, &name_id)
-    })?;
-    // The reader and the parsers run together, so the stage wall is the
-    // larger of the two and not their sum. On this host the read is 58,958 ms
-    // busy against 23,767 ms of parser CPU when the file is not in cache.
-    let read_ms = stats.read_ms;
-    let parse_ms = stats.parse_ms;
-    let t_merge = Instant::now();
-    let mut edges: Vec<u8> = Vec::with_capacity(64 << 20);
-    // The per-thread count maps hold disjoint key sets, because every row
-    // of a title is in one byte range. The entries are collected straight
-    // into one vector, so the merge costs no map re-insert.
-    let mut sorted: Vec<(u64, u32)> = Vec::new();
-    for p in &parts {
-        sorted.reserve(p.counts.len());
-        for (&t, &c) in p.counts.iter() {
-            sorted.push((t, c));
+    let gen = source_fingerprint(&principals_path);
+    let (pc, edges) = match (reuse.take_fresh("princount"), reuse.take_fresh("q2edges")) {
+        (Some(pc), Some(edges)) => {
+            println!(
+                "reuse principals: {} titles, {} edges",
+                pc.len() / 12,
+                edges.len() / 16
+            );
+            (pc, edges)
         }
-        edges.extend_from_slice(&p.edges);
-    }
-    let merge_ms = t_merge.elapsed().as_secs_f64() * 1e3;
-    // The section bytes must be reproducible, and a HashMap iteration
-    // order changes between processes, so the entries are sorted by title.
-    let t_sort = Instant::now();
-    sorted.sort_unstable_by_key(|&(t, _)| t);
-    // A title whose rows straddle a range boundary appears twice, so the
-    // adjacent duplicates are summed.
-    let mut merged: Vec<(u64, u32)> = Vec::with_capacity(sorted.len());
-    for (t, c) in sorted {
-        match merged.last_mut() {
-            Some(last) if last.0 == t => last.1 += c,
-            _ => merged.push((t, c)),
+        _ => {
+            let name_id = name_map.take().unwrap_or_else(|| name_index(&name_meta));
+            let (parts, threads_used, stats) =
+                stream_stage(&principals_path, plan.threads, |block, skip| {
+                    parse_principals_range(block, (0, block.len()), skip, &name_id)
+                })?;
+            // The reader and the parsers run together, so the stage wall is
+            // the larger of the two and not their sum. On this host the read
+            // is 58,958 ms busy against 23,767 ms of parser CPU when the file
+            // is not in cache.
+            let t_merge = Instant::now();
+            let mut edges: Vec<u8> = Vec::with_capacity(64 << 20);
+            // The per-thread count maps hold disjoint key sets, because every
+            // row of a title is in one byte range. The entries are collected
+            // straight into one vector, so the merge costs no map re-insert.
+            let mut sorted: Vec<(u64, u32)> = Vec::new();
+            for p in &parts {
+                sorted.reserve(p.counts.len());
+                for (&t, &c) in p.counts.iter() {
+                    sorted.push((t, c));
+                }
+                edges.extend_from_slice(&p.edges);
+            }
+            let merge_ms = t_merge.elapsed().as_secs_f64() * 1e3;
+            // The section bytes must be reproducible, and a HashMap iteration
+            // order changes between processes, so the entries are sorted by
+            // title.
+            let t_sort = Instant::now();
+            sorted.sort_unstable_by_key(|&(t, _)| t);
+            // A title whose rows straddle a range boundary appears twice, so
+            // the adjacent duplicates are summed.
+            let mut merged: Vec<(u64, u32)> = Vec::with_capacity(sorted.len());
+            for (t, c) in sorted {
+                match merged.last_mut() {
+                    Some(last) if last.0 == t => last.1 += c,
+                    _ => merged.push((t, c)),
+                }
+            }
+            let sort_ms = t_sort.elapsed().as_secs_f64() * 1e3;
+            let mut pc: Vec<u8> = Vec::with_capacity(merged.len() * 12);
+            for &(t, c) in &merged {
+                pc.extend_from_slice(&t.to_le_bytes());
+                pc.extend_from_slice(&c.to_le_bytes());
+            }
+            let stage_ms = t0.elapsed().as_secs_f64() * 1e3;
+            println!(
+                "build principals: {} titles, {} edges in {stage_ms:.0} ms ({threads_used} threads)",
+                merged.len(),
+                edges.len() / 16
+            );
+            println!(
+                "build principals split: read {:.0} ms busy, parse {:.0} ms CPU, \
+                 stage {stage_ms:.0} ms, merge {merge_ms:.0} ms, sort {sort_ms:.0} ms, write {} MB",
+                stats.read_ms,
+                stats.parse_ms,
+                pc.len() >> 20
+            );
+            (pc, edges)
         }
-    }
-    let sorted = merged;
-    let sort_ms = t_sort.elapsed().as_secs_f64() * 1e3;
-    let mut pc: Vec<u8> = Vec::with_capacity(sorted.len() * 12);
-    for &(t, c) in &sorted {
-        pc.extend_from_slice(&t.to_le_bytes());
-        pc.extend_from_slice(&c.to_le_bytes());
-    }
+    };
     let principals_ms = t0.elapsed().as_secs_f64() * 1e3;
-    println!(
-        "build principals: {} titles, {} edges in {principals_ms:.0} ms ({threads_used} threads)",
-        sorted.len(),
-        edges.len() / 16
-    );
-    println!(
-        "build principals split: read {read_ms:.0} ms busy, parse {parse_ms:.0} ms CPU, \
-         stage {principals_ms:.0} ms, merge {merge_ms:.0} ms, sort {sort_ms:.0} ms, write {} MB",
-        pc.len() >> 20
-    );
     reports.push(StageReport {
         name: "principals",
-        rows: sorted.len() as u64,
+        rows: (pc.len() / 12) as u64,
         ms: principals_ms,
     });
-    let gen = source_fingerprint(&principals_path);
     sink.write_section("princount", &pc, gen)?;
     sink.write_section("q2edges", &edges, gen)?;
 
@@ -383,7 +471,6 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
     drop(name_blob);
     drop(ratings);
     drop(basics);
-    drop(name_id);
 
     Ok(reports)
 }
