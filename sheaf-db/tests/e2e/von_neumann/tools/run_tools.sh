@@ -8,7 +8,7 @@
 set -e
 cd "$(dirname "$0")"
 
-for tool in cpu_floor q1_decompose q2_decompose q2_projection crc_pass; do
+for tool in cpu_floor q1_decompose q2_decompose q2_projection crc_pass arch_gains; do
   rustc -O "$tool.rs" -o "$tool.exe"
   "./$tool.exe"
   echo "--- $tool done ---"

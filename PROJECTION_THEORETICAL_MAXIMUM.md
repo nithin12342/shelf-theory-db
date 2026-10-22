@@ -1,5 +1,16 @@
 # Projection: the theoretical maximum against the seven compared databases
 
+> **CORRECTION, 2026-10-22 09:36:13.** The Q2 floor in this document is wrong, and
+> `ADVERSARIAL_ANALYSIS.md` explains why. The 0.0014 ms figure assumed the fiber is
+> stored pre-sorted so the top 10 is a ten-row read. The measured pre-aggregated scan
+> of 15.7M rows is 22.0 to 48.7 ms, not 0.0014 ms. The Q2 speedup against DuckDB is
+> 257x to 569x, not 20 million times. The Q1 and Q3 floors need the same correction.
+> The total-time column is also missing: ShelfDB is faster on query time against all
+> eight opponents and slower on total time against seven of the eight, because of the
+> 51.1 s bundle build against DuckDB's 0.1 s load.
+> See `ADVERSARIAL_ANALYSIS.md` section 6 and `ARCHITECTURE_GAINS.md` for the
+> corrected numbers and the improvements that close the gap.
+
 **Report timestamp:** 2026-10-21 22:41:18 +05:30 (2026-10-21 17:11:18 UTC)
 **Basis commit:** `26e590f` (branch `fiber-bundle-replacement`)
 **Question:** if the shelf architecture reached its theoretical maximum, what would the numbers be in complex environmental queries, how much efficiency would be gained, and how many times faster than the seven databases that were compared?
