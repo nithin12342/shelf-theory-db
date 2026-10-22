@@ -8,10 +8,10 @@
 set -e
 cd "$(dirname "$0")"
 
-rustc -O cpu_floor.rs -o cpu_floor.exe
-./cpu_floor.exe
-
-rustc -O q2_projection.rs -o q2_projection.exe
-./q2_projection.exe
+for tool in cpu_floor q1_decompose q2_decompose q2_projection crc_pass; do
+  rustc -O "$tool.rs" -o "$tool.exe"
+  "./$tool.exe"
+  echo "--- $tool done ---"
+done
 
 echo "PROJECTION TOOLS: COMPLETE"
