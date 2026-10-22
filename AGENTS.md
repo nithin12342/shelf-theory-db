@@ -84,3 +84,34 @@ The global rules at `~/.config/opencode/instructions.md` hold the full rule set.
 2. Do not run `git push`, `git fetch`, `git pull`, or any other command that touches a remote.
 3. Keep `SKELETON.md` up to date. It is the source of truth for this repository.
 4. Follow the engineering method in Part 5 of the global rules file. Load the `intention-engineering` skill first.
+
+---
+
+## 4. The document set (read the plan of record first)
+
+`SKELETON.md` holds the source of truth for the code. These documents hold the analysis. Every
+number in every one of them names a committed result file, or a derivation shown in full.
+
+| Document | What it answers |
+|---|---|
+| `PERFORMANCE_FIX_PLAN_2026-10-22.md` | **The plan of record.** The eight nodes that remove the measured performance waste, with the order as a dependency. |
+| `PERFORMANCE_WASTE_ANALYSIS.md` | Where the time goes, for both comparison tables, with the measured cause of each waste. |
+| `CODE_CHANGES_AND_EXPECTED_GAINS.md` | The six code changes with their measured gains, their files and their gates. |
+| `SEVEN_DATABASE_AREA_COMPARISON.md` | The shelf database against the seven, area by area, current and projected. |
+| `RUNTIME_COMPARISON.md` | The existing seven-database comparison, with the correction on the setup column. |
+| `ADVERSARIAL_ANALYSIS.md` | The three adversarial attacks on the shelf architecture. |
+| `ARCHITECTURE_GAINS.md` | The improvement candidates and the timestamped analysis record. |
+| `SHELF_DATA_REPRESENTATION_REPORT.md` | The read and write cost of the shelf representation. |
+| `VON_NEUMANN_LIMITS.md` and `VON_NEUMANN_LIMITS_STORAGE.md` | The 18 physical limits, measured against derived. |
+| `PROJECTION_THEORETICAL_MAXIMUM.md` | The earlier projection, superseded, kept as the record. |
+| `FIBER_LIFECYCLE_PLAN.md` | The fiber bundle lifecycle. Part C holds the performance-waste nodes. |
+| `CONVERSATION_LOG_2026-10-21.md` and `CONVERSATION_LOG_2026-10-22.md` | The session records, with every correction filed. |
+| `CODE_CHANGE_MAP.md` | Every change mapped to its files, its size and its state. |
+
+**Two rules that came out of the sessions.**
+
+1. Every row in a comparison table names its dataset, and every projected value names the
+   measured floor it rests on.
+2. A claim about a production code path comes from a measurement of that path. The 7.14x
+   whole-file read waste was measured in an analysis tool, and the production reader was
+   already section-scoped.

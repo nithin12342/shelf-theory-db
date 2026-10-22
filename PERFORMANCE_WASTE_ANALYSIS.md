@@ -214,3 +214,13 @@ Rows = the waste. Columns = the measured size, the share of the thing it sits in
 | The build source file sizes | `D:\d2\data\imdb`, 927.5 + 28.7 + 1,065.6 + 4,362.0 MB |
 
 **Analysis generated:** 2026-10-22 12:33:59 local (Asia/Kolkata), 2026-10-22 07:03:59 UTC.
+
+---
+
+## 9. The plan of record
+
+**Plan timestamp:** 2026-10-22 13:01:38 local (Asia/Kolkata, UTC+05:30), which is 2026-10-22 07:31:38 UTC.
+
+The plan that removes the waste measured in this document is `PERFORMANCE_FIX_PLAN_2026-10-22.md`. It names eight nodes, METHOD-059 through METHOD-066, with the file, the size, the gate, the evidence each must produce, and the order. The order is a dependency: the 4-thread parse must land before the pre-aggregates, because the pre-aggregate joins add 18,349 ms to the build.
+
+The session record is `CONVERSATION_LOG_2026-10-22.md`. It lists the eight corrections filed against the pushed documents.

@@ -48,3 +48,25 @@ local main    : 6 commits ahead (b79d89a..298edd8)
 remote        : untouched since revert 03aaec0 (0 pushed this session section)
 reverted pair : 8684aa2 (bad rematch) / 03aaec0 (revert) — history only
 ```
+
+## Session 2026-10-22 (analysis, benches, and the fix plan)
+
+| # | Commit | Files | Lines | Purpose | State |
+|---|---|---|---|---|---|
+| 19 | `b582cc1` | `SEVEN_DATABASE_AREA_COMPARISON.md` (NEW) + 4 docs (edits) + `results/imdb_shelf_runs.json` (NEW) + 3 tools (edits) | about 900 | The area-by-area comparison, the four-run archive, and the tool provenance | Committed |
+| 20 | `1c2623d` | `CODE_CHANGES_AND_EXPECTED_GAINS.md` (NEW) + `bundle_load_bench.rs` (NEW) + `q1_kernel_bench.rs` (NEW) + 4 docs (edits) | about 700 | The code changes C1 to C6 with the measured gains, and the two benches that measured them | Committed |
+| 21 | `af79df7` | `PERFORMANCE_WASTE_ANALYSIS.md` (NEW) + `SKELETON.md` (edit) | about 230 | Where the performance goes, for both comparison tables | Committed |
+| 22 | this commit | `PERFORMANCE_FIX_PLAN_2026-10-22.md` (NEW) + `CONVERSATION_LOG_2026-10-22.md` (NEW) + 8 docs (edits) | about 800 | The fix plan METHOD-059 to METHOD-066, and the session record | Committed |
+
+## Planned, from `PERFORMANCE_FIX_PLAN_2026-10-22.md`
+
+| Node | Target file(s) | Lines | Source | Gate |
+|---|---|---|---|---|
+| METHOD-065, re-measure the opponent setup | a new runner under `tests/e2e/realtime_bench/` | about 200 | The 0.1 s DuckDB number is below the 1,995 ms physical floor | the recorded number is at or above the floor |
+| METHOD-061, one pass per line | `crates/sheaf-engine/src/bin/imdb_fiber_bench.rs` | about 40 | The `field` helper rescans the line for every field | the six sections byte for byte |
+| METHOD-062, a digit loop | the same file | about 30 | The generic `str::parse` and the UTF-8 validation | the six sections byte for byte |
+| METHOD-063, 4 threads over the parse | the same file | about 120 | The parse is 96.5% to 98.5% of the build | the six sections, plus the three query gates |
+| METHOD-064, the fused CRC verify | `crates/sheaf-engine/src/bin/shared/imdb_fiber.rs` | about 20 | The verify is 23.7% to 32.7% of the load | the CRC corruption negative test |
+| METHOD-059, the Q1 answer fiber | the same two files | about 55 | 93.2% to 93.9% of the Q1 query is a join | the variant gate on count, votes and average |
+| METHOD-060, the Q2 and Q3 pre-aggregates | the same two files | about 90 | 99.7% of the Q2 query is a join | the md5 cross-engine gate |
+| METHOD-066, the latency fixes on the build | the same file | about 40 | The same patterns measured no gain on the query | the six sections byte for byte |

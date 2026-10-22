@@ -301,3 +301,23 @@ The new bench `crates/sheaf-engine/src/bin/q1_kernel_bench.rs` measures four var
 | The TPC-H scan and fiber join | `results/mt_scan.json` and `results/fiber.json` |
 
 **Report generated:** 2026-10-22 12:40:00 local (Asia/Kolkata), 2026-10-22 07:10:00 UTC.
+
+---
+
+## 9. The plan of record and the node mapping
+
+**Plan timestamp:** 2026-10-22 13:01:38 local (Asia/Kolkata, UTC+05:30), which is 2026-10-22 07:31:38 UTC.
+
+The plan of record is `PERFORMANCE_FIX_PLAN_2026-10-22.md`. It supersedes the change list in this document, and it carries the same gains with the node numbers that the skeleton uses.
+
+| This document | The plan node | Note |
+|---|---|---|
+| C1, the answer fiber | METHOD-059 | The same change, with the shape-safety rule and the bundle version bump added |
+| C2, the pre-aggregates | METHOD-060 | The same change, with the pre-sorted variant and the 16.1 to 17.2 ms selection |
+| C3, the parallel parse | METHOD-063 | The same change, with the merge cost for each stage |
+| C4, the fused verify | METHOD-064 | The same change, with the 1.31x to 1.48x range |
+| C5, the 4 accumulators | METHOD-066, for the build only | The gain is on the TPC-H scan, and the plan tests the build |
+| C6, the sharded Q1 | rejected | The bench stays as the evidence |
+| new | METHOD-061 | One pass per line in the build, not one pass per field |
+| new | METHOD-062 | A digit loop in place of the generic parse |
+| new | METHOD-065 | Re-measure the opponent setup, because the 0.1 s number is below the physical floor |

@@ -116,3 +116,27 @@ An interim summary placed "MongoDB 29.7 ms" beside "ShelfDB 143 ms" in one row. 
 **Two findings from this case (adversarial, both against us):**
 1. **ScyllaDB's query (90 ms) beats ShelfDB's (143 ms)** — because CQL clusters on `avg`, so `avg >= 7.5` is a clustering-range scan, while ShelfDB still scans all 12.9M `title.basics` rows to apply the movie/year filter at query time. The fix is our own P3 lesson (pre-aggregate / pre-filter at build time), not a new idea: a filtered fiber would make the ShelfDB query a pure scan of the 44,906 surviving rows.
 2. **On total time ShelfDB still wins by 74x** (0.38 s vs 28.1 s) because its build is 118x cheaper than Scylla's write-time join + insert. Query-only vs build+query are different games and must be reported separately.
+
+---
+
+## 7. Correction, 2026-10-22 13:01:38 local â€” the setup column needs a script behind it
+
+**The DuckDB setup of 0.1 s cannot be a parse of the IMDb data.** The physical floor for reading
+the 6,383.8 MB of source from this NVMe at the measured 3.20 GB/s is 1,995 ms. Parsing
+72,779,864 rows in 0.1 s is 728 million rows per second, which is 16 cycles per row on 4 cores.
+The repository holds `results/imdb_job.json` with the number and no script that shows how it was
+produced. **The 511x setup gap in the tables above is therefore an upper bound**, and the total-time
+comparison against DuckDB is an upper bound too.
+
+Two other corrections from the same session:
+
+- The bundle reader is already section-scoped. A query needs 201,692,415 B for the Q1 sections
+  and pays for 14.02% of the 1,439,107,807 B file, not 100%. The load cost is the CRC32C verify,
+  at 23.7% to 32.7% of the load.
+- The 1.40x accumulator gain measured on the TPC-H scan kernel does not reach the IMDb path.
+  On the IMDb Q1 path the same change measures 0.851x to 0.986x, and a 4-thread sharded map
+  measures 0.961x to 1.059x. The wall on that path is latency on random probes.
+
+**The plan of record is `PERFORMANCE_FIX_PLAN_2026-10-22.md`.** The waste ledger is
+`PERFORMANCE_WASTE_ANALYSIS.md`. The area-by-area comparison is
+`SEVEN_DATABASE_AREA_COMPARISON.md`.

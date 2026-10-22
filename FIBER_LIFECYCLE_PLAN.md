@@ -216,3 +216,52 @@ when a live-fiber design exists.
 | **N4 delivered (2026-10-21)** | per-domain incremental fiber update: 1,000 writes cost 2 re-sorts (the dirty domains), not 1,000 | `fiber_epoch_bench` PASS |
 | **N5 delivered (2026-10-21)** | the compactor exposes the frozen epoch; a build during a concurrent compaction is byte-equal to a quiet-box build; a pre-merge fiber is refused | `fiber_lifecycle_bench` PASS |
 | **N6 delivered (2026-10-21)** | 10,000 mixed read/write ops: fiber == fallback every time, no deadlock, lag bounded (2 generations) and reported | `fiber_lifecycle_bench` + `run_fiber_lifecycle.py` 6/6 PASS |
+
+---
+
+# Part C - the performance-waste plan (appended 2026-10-22 13:01:38 local. Nothing in Part A or Part B is discarded.)
+
+## C.1 Why this part exists
+
+The plan of record is `PERFORMANCE_FIX_PLAN_2026-10-22.md`. It removes the measured performance
+waste of the bundle path, and the bundle path is the fiber lifecycle. The waste ledger is
+`PERFORMANCE_WASTE_ANALYSIS.md`.
+
+Two findings change the fiber story, and both are measured:
+
+1. **The bundle is a pre-parse, not a pre-aggregate.** The byte ratio against the answer is
+   280.7x on the IMDb Q1 shape and 0.13x on the TPC-H fiber. The TPC-H fiber holds the answer.
+   The IMDb bundle holds the source columns, so every query re-derives the answer, and 93.2% to
+   99.7% of the query time is not byte movement. **A fiber per query shape, built at the shape's
+   parameters and stored with those parameters, is the fix.** That is Axis A extended: the bundle
+   gains sections that hold answers, not only source columns.
+2. **The build is 96.5% to 98.5% a character-level parse.** 72,779,864 rows at 1,549 ns per row
+   and 56.6 MB/s, with the measured hash insert at 116 to 137 ns, so 91.2% to 92.5% is text
+   handling. The `field` helper scans the line from byte 0 for every field it wants, so the
+   basics stage examines 18 tab positions per row where 9 are enough.
+
+## C.2 The appended nodes
+
+| Node | Lifecycle effect | Gate |
+|---|---|---|
+| METHOD-065 | the setup comparison gets a script, so the 511x gap is measured and not assumed | the recorded number is at or above the 1,995 ms physical floor |
+| METHOD-061 | one pass per line in the build, 115,797,375 redundant tab reads removed | the six sections byte for byte |
+| METHOD-062 | a digit loop in place of the generic parse | the six sections byte for byte |
+| METHOD-063 | 4 threads over the parse, 112,721 ms to 28,180 ms | the six sections, plus the three query gates |
+| METHOD-064 | the CRC verify folds into the read, 23.7% to 32.7% of the load | the CRC corruption negative test |
+| METHOD-059 | the Q1 answer fiber, a new section holding the 44,906 surviving rows | the variant gate on count, votes and average |
+| METHOD-060 | the Q2 aggregate and the Q3 groups, built from the same pass | the md5 cross-engine gate |
+| METHOD-066 | the latency fixes tested on the build, where there is no dependency chain | the six sections byte for byte |
+
+## C.3 The invariant that the appended nodes must not break
+
+A stale bundle is rebuilt, never answered from. A fiber built for one shape must never answer a
+query with different parameters, so every new section carries the parameters it was built with
+and the reader refuses a mismatched one. The bundle format version is bumped with the new
+sections, so a bundle written before the change is rebuilt rather than read.
+
+## C.4 The dependency that governs the order
+
+The pre-aggregate joins add 18,349 ms to the build. With METHOD-063 the build is 46,529 ms, which
+is 2.42x better than today. Without it the build is 131,070 ms, which is worse than today.
+**METHOD-063 must land before METHOD-059 and METHOD-060 are worth anything at scale.**

@@ -106,3 +106,5 @@ Real gap found : snapshot has no checksum (A9) — recommend u64 magic+len+crc
 | Incremental after 1 bin touched | 0.8 s | incl. process spawn |
 | Release-only artifacts | 0.05 GB | main `target/` = 0.87 GB (debug + incremental) |
 | Runtime fiber bundle build (IMDb, per run, pre-cache) | 178.96 s | now 51.1 s once + cached queries |
+
+| Runtime fiber bundle build (IMDb, per run, pre-cache) | 178.96 s | now 51.1 s once + cached queries. Measured 112,721 ms for the forced full rebuild, of which 96.5% to 98.5% is the character-level parse | Plan: `PERFORMANCE_FIX_PLAN_2026-10-22.md` METHOD-061/062/063, 112,721 ms to 28,180 ms |

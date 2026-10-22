@@ -195,3 +195,77 @@ fix, not a hardware limit, and it is the next change to make.**
 | Soft errors from cosmic rays | 64 errors per month in 16 GiB, 2.13 per day; one bit survives 1.76e8 years but the module fails every 11.2 hours | **Error correction is mandatory, at a rate set by physics.** Every WAL frame already carries a CRC32C. |
 | NAND endurance | 300 terabytes-written rating exhausted in 3.2 years at 0.1 device writes per day | The write budget is 51.2 GB per day for the whole drive. The fiber bundle turns a write-heavy load into a read-only one. |
 | Landauer, Margolus-Levitin, Bekenstein, address space | 3.5e5x, 1e24x, 3e-15, 1e-7% away | Not binding. Do not design against them. |
+
+## 15. Performance waste and the fix plan (2026-10-22)
+
+**Trigger.** The question "why is the mathematically optimal architecture slow, and where is the
+performance wasted" needed an answer that was measured, for both comparison tables. The
+measurements are in `PERFORMANCE_WASTE_ANALYSIS.md`. The plan of record is
+`PERFORMANCE_FIX_PLAN_2026-10-22.md`, timestamped 2026-10-22 13:01:38 local (Asia/Kolkata, UTC+05:30), which is 2026-10-22 07:31:38 UTC. The session record is
+`CONVERSATION_LOG_2026-10-22.md`. Traceability: REQ-058 / SPEC-058 / METHOD-059..066.
+
+**The answer.** The shelf database is not slow because it moves bytes. It is slow because it
+resolves the join at query time, and because its build parses text one byte at a time. The von
+Neumann analysis is right about the data representation and silent about where the time goes.
+
+**The query-time ledger.** The section byte counts are read out of the bundle index directly.
+
+| Query | Bytes moved (B) | Query time (ms) | Share of the 19.2 GB/s bus peak | Time that is not byte movement | Share not bytes |
+|---|---|---|---|---|---|
+| IMDb Q1 | 201,692,415 | 153.4 to 173.6 | 6.0% to 6.9% | 142.9 to 163.1 ms | **93.2% to 93.9%** |
+| IMDb Q2 | 1,097,898,654 | 18,333.3 | 0.31% | 18,276.1 ms | **99.7%** |
+| IMDb Q3 | 306,779,567 | 1,746.9 | 0.92% | 1,730.9 ms | **99.1%** |
+| TPC-H join, answer fiber | 208 | 3.2 to 7.9 | n/a | n/a | the answer is already materialized |
+
+**The total-time ledger.**
+
+| Item | Time (ms) | Share of the parent | What it is |
+|---|---|---|---|
+| The build's character-level parse | 108,756 to 111,080 | **96.5% to 98.5% of the 112,721 ms build** | 72,779,864 rows of scalar text handling |
+| The build's file read | 1,641 to 3,965 | 1.5% to 3.5% of the build | 6,383.8 MB at the measured 1.61 to 3.89 GB/s |
+| The load's CRC32C second pass | 32.7 to 43.4 | **23.7% to 32.7% of the 120.8 to 137.9 ms load** | a second pass over the same bytes |
+| The Q1 query's join | 142.9 to 163.1 | 93.2% to 93.9% of the query | 1,721,477 map inserts, 3,216,590 random probes |
+| The Q2 query's join | 18,276.1 | 99.7% of the query | 42,453,755 probes into a 15,738,257-entry map |
+
+**The structural cause.** The byte ratio against the answer is 280.7x on the IMDb Q1 shape and
+0.13x on the TPC-H fiber. The TPC-H fiber is a pre-aggregate and holds the answer. The IMDb
+bundle is a pre-parse and holds the source columns, so every query re-derives the answer, and a
+join is a chain of random probes that does not care how few bytes the machine moves. The two
+structures share one name and one set of claims, and the difference between them is the whole
+story.
+
+**The build, row by row.** 72,779,864 rows in 112,721 ms, which is 1,549 ns per row and
+56.6 MB/s of text. The measured hash insert is 116 to 137 ns, so 91.2% to 92.5% of the per-row
+cost is text extraction and formatting. The basics stage inserts into no map at all and still
+costs 868 ns per row. The `field` helper scans the line from byte 0 for every field it wants, so
+the basics stage examines 18 tab positions per row where 9 are enough, which is 115,797,375
+redundant tab reads over the stage.
+
+**The plan, eight nodes, with the order as a dependency.**
+
+| Node | Waste it removes | Gain | Gate |
+|---|---|---|---|
+| METHOD-065 | the unverified DuckDB setup number | no performance gain. It settles the 511x gap. | the recorded number must be at or above the physical floor |
+| METHOD-061 | the redundant tab examinations | removes 9 of 18 per basics row | the six sections byte for byte |
+| METHOD-062 | the generic parse and the UTF-8 validation | a hypothesis, 91.2% to 92.5% of the build | the six sections byte for byte |
+| METHOD-063 | the serial parse | **4.00x**, 112,721 ms to 28,180 ms | the six sections, plus the three query gates |
+| METHOD-064 | the CRC second pass | **1.31x to 1.48x** on the load | the CRC corruption negative test |
+| METHOD-059 | the Q1 join | **1,646x to 3,003x** on the query | the variant gate on count, votes and average |
+| METHOD-060 | the Q2 and Q3 joins | **83x to 116x** on Q2 | the md5 cross-engine gate |
+| METHOD-066 | the latency fixes aimed at the wrong end | a hypothesis. The build has no dependency chain. | the six sections |
+
+**The dependency that matters.** The pre-aggregate joins add 18,349 ms to the build. With
+METHOD-063 the build is 46,529 ms, which is 2.42x better than today. Without it the build is
+131,070 ms, which is worse than today. METHOD-063 must land before METHOD-059 and METHOD-060
+are worth anything at scale.
+
+**Two corrections to the design thesis, both measured.** The 1.40x accumulator gain measured on
+the TPC-H scan kernel does not reach the IMDb path, where the same change measures 0.851x to
+0.986x and a 4-thread sharded map measures 0.961x to 1.059x. The wall on that path is latency
+on random probes, and the memory controller is 75% to 95% saturated. The build has 72,779,864
+independent rows and no dependency chain, so the same techniques have no wall to hit there.
+
+**The setup comparison rests on an unexplained number.** DuckDB's recorded 0.1 s is below the
+1,995 ms physical floor for reading 6,383.8 MB at the measured 3.20 GB/s. The repository holds
+no script that shows how it was produced, so the 511x setup gap is an upper bound until
+METHOD-065 runs.

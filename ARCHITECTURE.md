@@ -141,3 +141,37 @@ Strict inward-only import would force a new domain-trait layer for two arrows wh
 A7. Theoretical-maximum program (2026-10-14, planned, unbuilt): bottleneck-probe measurements (bandwidth ~8.4 GB/s read, fsync 1.2 ms, 4-thread scaling ~1.25x, checksum ~2% of ops) motivate FILE-060/061/062 (P1/P3/P4 builds). P2/P5/P6 modify existing files (name_lookup, partition) with no new FILE IDs. Traceability: REQ-030..035 / SPEC-030..035 / METHOD-024..029 (stubs). Predictions are stretch targets with hard-gate parity floors; see MAX_PERF_PLAN.md.
 A8: Von Neumann physical-limits probe (2026-10-21, built + verified): a new bench-only bounded context `HardwarePhysics` (FOLDER-020) with 5 files - FILE-099 `bin/physical_limits_probe.rs` (the probe) and FILE-100/101/102/103/104 `bin/shared/phys_mem.rs` / `phys_derive.rs` / `phys_store.rs` / `phys_workload.rs` / `phys_ceilings.rs` (measurement core, physical-floor derivation, storage core, kernel-utilization measurement, fundamental ceilings). It measures this host's memory hierarchy and storage limits and prints the DERIVED physical floors beside them, so the comparison is measured-vs-derived rather than asserted. It touches no engine code and imports no crate (pure std + inline asm), so it adds no DIP edge. Gate: `tests/e2e/von_neumann/run.sh` (6 physics-invariant ordering gates, 2 clock cross-checks, 2 kernel-utilization gates, 4 ceiling gates). Report: `VON_NEUMANN_LIMITS.md`. Two repo corrections filed there: thread scaling is 1.47x (not 1.25x - the old figure counted a memcpy's write traffic), and the "64 MB L3 domain" of SPEC-016 is 5.3x this host's real 12 MiB L3, so domains must be sized to the measured LLC of the target class. Traceability: REQ-057 / SPEC-057 / METHOD-052, METHOD-053, METHOD-054.
 A7. Theoretical-maximum program (2026-10-14, planned, unbuilt): bottleneck-probe measurements (bandwidth ~8.4 GB/s read, fsync 1.2 ms, 4-thread scaling ~1.25x, checksum ~2% of ops) motivate FILE-060/061/062 (P1/P3/P4 builds). P2/P5/P6 modify existing files (name_lookup, partition) with no new FILE IDs. Traceability: REQ-030..035 / SPEC-030..035 / METHOD-024..029 (stubs). Predictions are stretch targets with hard-gate parity floors; see MAX_PERF_PLAN.md.
+
+## As-built deltas (continued, 2026-10-22)
+
+A9. Performance-waste measurement context (2026-10-22, built + verified): two bench-only
+binaries in the existing `HardwarePhysics` bounded context (FOLDER-020), plus a `SPEC-058` plan.
+- `crates/sheaf-engine/src/bin/bundle_load_bench.rs` (FILE-115): decomposes the IMDb bundle
+  section load into the raw read, the CRC32C verify, and the buffer zero-fill, and reports the
+  share of the file that a section-scoped read pays for.
+- `crates/sheaf-engine/src/bin/q1_kernel_bench.rs` (FILE-116): compares four variants of the
+  IMDb Q1 kernel on the real bundle sections, with a gate that all four agree on count, votes
+  and average.
+Both import only the existing `shared/imdb_fiber.rs` and `sheaf_storage::lsp::ring_wal::crc_hw`.
+Neither adds a crate edge, so the dependency-inversion audit stays clean. Two findings that
+change the design, not just the report: (1) the bundle reader is already section-scoped, so the
+previously claimed 7.14x whole-file read waste does not exist, and the real load cost is the
+CRC32C second pass at 23.7% to 32.7%. (2) The 1.40x accumulator gain measured on the TPC-H
+scan kernel does not reach the IMDb path, where the same change measures 0.851x to 0.986x.
+Traceability: REQ-058 / SPEC-058 / METHOD-059..066, planned.
+
+A10. Planned build and load path changes (2026-10-22, planned, unbuilt). The plan of record is
+`PERFORMANCE_FIX_PLAN_2026-10-22.md`. No file in the storage engine, the kernel, the compiler or
+the query language changes. Every node is in the bench and bundle path:
+- `shared/imdb_fiber.rs` (FILE-074) gains a section writer for the answer fiber and the
+  pre-aggregates, and `BundleReader::section` folds the CRC32C verify into the read.
+- `imdb_fiber_bench.rs` (the bin that owns `shared/imdb_fiber.rs` and the build function) gains
+  the answer-fiber and pre-aggregate build steps, a one-pass-per-line field extractor, a digit
+  loop in place of the generic parse, and a 4-thread split over the parse.
+- The `field` helper, which today scans the line from byte 0 for every field it wants, is
+  replaced by a single pass that collects every wanted field. The basics stage examines 18 tab
+  positions per row where 9 are enough.
+- The bundle format version is bumped so an old bundle is rebuilt rather than answered from.
+The dependency that governs the order: the pre-aggregate joins add 18,349 ms to the build, so
+the 4-thread parse (112,721 ms to 28,180 ms) must land before the pre-aggregates are worth
+anything at scale. Traceability: REQ-058 / SPEC-058 / METHOD-059..066.
