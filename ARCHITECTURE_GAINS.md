@@ -17,9 +17,9 @@ Rows = the improvement. Columns = the measured gain, the class of change, and th
 | # | Improvement | Measured gain | Class | Cost |
 |---|---|---|---|---|
 | 1 | Second memory channel | **2.0x bus ceiling**, 2.65x to 4.45x on measured bandwidth | Hardware | A DIMM |
-| 2 | Four-way parallel fiber build | **51,100 ms to 28,180 ms**, a 1.8x build cut | Software | One build function |
+| 2 | Four-way parallel fiber build | **112,721 ms to 28,180 ms**, a 4.00x build cut | Software | One build function |
 | 3 | Range read instead of whole-file read | **7.14x less data read** per query | Software | One function |
-| 4 | Pre-aggregate for Q2 and Q3 | **257x to 569x** and 105x to 231x | Architecture | One build per shape |
+| 4 | Pre-aggregate for Q2 and Q3 | **230x to 1,175x** and 4,120x to 20,313x | Architecture | One build per shape |
 | 5 | Four accumulators in the partition scan | **1.40x** on the 1-thread scan | Software | 10 lines |
 | 6 | Large pages | Removes a **534 ns** walk per miss | Software | Privilege |
 | 7 | Domain sizing to the measured LLC | Removes **5.3x** over-provisioning | Software | One constant |
@@ -79,9 +79,9 @@ Rows = the improvement. Columns = the measured gain, the class of change, and th
 
 **This is the only improvement that changes a physical limit rather than working within it.** Every other row in section 1 multiplies against a 25.6 GB/s bus, and this one doubles the bus.
 
-**The gain compounds.** The 569x Q2 gain from a pre-aggregate is a bytes reduction, and it applies at any bus width. The 1.40x accumulator gain is a latency fix, and it applies at any bus width. The second channel makes both more effective, because more of the machine is fed.
+**The gain compounds.** The 1,175x Q2 gain from a pre-aggregate is a bytes reduction, and it applies at any bus width. The 1.40x accumulator gain is a latency fix, and it applies at any bus width. The second channel makes both more effective, because more of the machine is fed.
 
-**The risk is zero for the code.** Adding a DIMM changes no source file. The 64 MB L3 domain assumption (section 7 of `ADVERSARIAL_ANALYSIS.md`) would also need revisiting, because the domain budget is a proxy for cache capacity and a second channel does not enlarge the L3.
+**The risk is zero for the code.** Adding a DIMM changes no source file. The 64 MB L3 domain assumption (section 7 of `ADVERSARIAL_ANALYSIS.md`) must also be revisited, because the domain budget is a proxy for cache capacity and a second channel does not enlarge the L3.
 
 ### 3.2 The fiber build can drop from 51.1 s to about 28.2 s
 
@@ -112,9 +112,9 @@ build principals: 11626391 titles, 42453755 edges in 89565 ms
 | Four-way parallel parse, perfect scaling | 28,180 | **4.0x** |
 | `principals` stage alone, four-way parallel | 22,391 | 4.0x on 80% of the build |
 
-**The cached-bundle build number is 51,100 ms** (`CONVERSATION_LOG_2026-10-21.md` event 10, the build without the 89.6 s principals stage). Against that baseline, a four-way parallel parse gives **51,100 ms to 28,180 ms, a 1.8x cut**.
+**The bundle build has two committed measurements.** The benchmark build is 51,100 ms (`CONVERSATION_LOG_2026-10-21.md` event 10). The forced full rebuild on 2026-10-22 is 112,721 ms, and it has the per-stage times above. A four-way parallel parse gives **112,721 ms to 28,180 ms, a 4.00x cut**, and that is 1.81x faster than the 51,100 ms benchmark build.
 
-**The consequence for the comparison.** The DuckDB setup gap is currently 511x (51,100 ms against 0.1 s). At 28,180 ms it becomes **181x**, and at a full 4x on the whole build it becomes **128x**. The gap narrows but does not close, because DuckDB's vectorized reader is faster at parsing than a hand-written scalar parser.
+**The consequence for the comparison.** The DuckDB setup gap is currently 511x (51,100 ms against 0.1 s). At 28,180 ms it becomes **282x**, and at a full 4x on the whole build it becomes **128x**. The gap narrows but does not close, because DuckDB's vectorized reader is faster at parsing than a hand-written scalar parser.
 
 **The honest limit.** A parallel parse does not remove the cost of parsing 750 MB of principals text. It divides it by the core count and stops there. The structural fix is to not parse the principals text at all, which is what a pre-aggregate for Q2's shape does (section 3.4).
 
@@ -129,7 +129,7 @@ build principals: 11626391 titles, 42453755 edges in 89565 ms
 | Whole-file read, cold | 1,439,107,807 | 1,165 | 1.24 |
 | Whole-file read, page cache warm | 1,439,107,807 | 1,186 | 1.21 |
 | Range read of the first 1,039,107,761 bytes | 1,039,107,761 | 1,077 | 0.96 |
-| **Bytes Q1 actually needs** | **201,692,415** | — | — |
+| **Bytes Q1 actually needs** | **201,692,415** | n/a | n/a |
 | **Waste ratio** | **7.14x** | | |
 
 **The gain.** A range read that fetches only the bytes the query needs cuts the read traffic by 7.14x. At the measured 1.24 GB/s that is 1,165 ms down to about 163 ms for the Q1 sections.
@@ -144,11 +144,11 @@ build principals: 11626391 titles, 42453755 edges in 89565 ms
 
 | Query | Now (ms) | Pre-aggregate floor (ms) | Gain |
 |---|---|---|---|
-| Q2, 4-table top-10 | 12,531 | 22.0 to 48.7 | **257x to 569x** |
-| Q3, 4-table decade rollup | 2,548 | 11.0 to 24.2 | **105x to 231x** |
+| Q2, 4-table top-10 | 18,333.3 | 15.6 to 79.7 | **230x to 1,175x** |
+| Q3, 4-table decade rollup | 1,746.9 | 0.086 to 0.424 | **4,120x to 20,313x** |
 | TPC-H join | 7.9 (already achieved) | 7.9 | reference |
 
-**The break-even is 4 queries** against the 51,100 ms build (`q1_decompose.rs` PART6, `q2_decompose.rs` PART6).
+**The break-even is 4 queries** against the 51,100 ms build and 9 queries against the 112,721 ms forced full rebuild (`q1_decompose.rs` PART6, `q2_decompose.rs` PART6).
 
 **This is the gain that is not a physical limit.** The 25.6 GB/s bus and the 133.61 ns DRAM latency are unchanged. What changes is that the query stops moving 648 MB of edges and starts moving 251 MB of aggregates, and then, with a pre-sorted fiber, 160 bytes.
 
@@ -194,9 +194,9 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 | Step | Change | Gain | Depends on the bus width? |
 |---|---|---|---|
 | 1 | Four accumulators | 1.40x | No, it is a latency fix |
-| 2 | Pre-aggregate for Q2 and Q3 | 257x to 569x, 105x to 231x | No, it is a bytes reduction |
+| 2 | Pre-aggregate for Q2 and Q3 | 230x to 1,175x, 4,120x to 20,313x | No, it is a bytes reduction |
 | 3 | Range read instead of whole-file read | 7.14x less traffic per query | Partly, it raises the rate toward the device limit |
-| 4 | Four-way parallel build | 1.8x faster setup | No |
+| 4 | Four-way parallel build | 4.00x faster setup | No |
 | 5 | Second memory channel | 2.0x bus ceiling | **Yes, it raises the ceiling itself** |
 
 **The order matters.** Steps 1 and 2 reduce work, so they apply at any bus width. Step 5 raises the width, so it makes the other steps feed the machine harder. **Doing 5 first and 1 and 2 later is the same total as the reverse, because 1 and 2 do not depend on the bus.**
@@ -206,12 +206,12 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 | Measure | Now (ms) | With steps 1 to 4 (ms) | With step 5 too (ms) |
 |---|---|---|---|
 | Q1 | 197.8 | 141 | 71 |
-| Q2 | 12,531 | 22.0 to 48.7 | 11.0 to 24.4 |
-| Q3 | 2,548 | 11.0 to 24.2 | 5.5 to 12.1 |
-| Suite, cached | 21,180 | 174 to 214 | 87 to 107 |
-| Setup, build | 51,100 | 28,180 | 28,180 |
+| Q2 | 18,333.3 | 15.6 to 79.7 | 7.8 to 39.9 |
+| Q3 | 1,746.9 | 0.086 to 0.424 | 0.043 to 0.212 |
+| Suite, cached | 21,180.2 | 157.0 to 221.4 | 78.5 to 110.7 |
+| Setup, build | 51,100 to 112,721 | 28,180 | 28,180 |
 
-**The suite wall drops by 99x to 122x.** The setup gap against DuckDB goes from 511x to 181x with the parallel build, and to 128x at a full 4x on the whole build.
+**The suite wall drops by 96x to 135x.** The setup gap against DuckDB goes from 511x to 282x with the parallel build, and to 128x at a full 4x on the whole build.
 
 **These projections rest on the measured floors, and the models that produced them do not reproduce the real code.** The Q1 and Q2 models are 1.6x to 6.4x off the measured times (`ADVERSARIAL_ANALYSIS.md` section 4.2 and 4.3). The projections are therefore stated as a direction and an order of magnitude, not as a promise.
 
@@ -252,7 +252,7 @@ The 64 MB L3 domain budget in `SPEC-016` and `ARCHITECTURE.md` is 5.3 times this
 | The per-stage build times | `imdb_fiber_bench` stdout, rebuild forced 2026-10-22 09:52 |
 | The bus peak and the 25.6 GB/s ceiling | `mt_scan_bench` 48 MB in 2.5 ms, and the probe's DRAM peak |
 | The 1.40x accumulator gain | `physical_limits_probe` section H |
-| The 257x to 569x and 105x to 231x pre-aggregate gains | `tools/q2_decompose.rs` PART5 and PART6 |
+| The 230x to 1,175x and 4,120x to 20,313x pre-aggregate gains | `tools/q2_decompose.rs` PART5 and PART6, 8 runs |
 | The 534.4 ns page walk | Derived from the probe's 133.61 ns DRAM latency and the 1536-entry STLB |
 | The CRC second pass | `tools/crc_pass.rs`, using the repository's 8.5 to 23 ms per 42.5 MB |
 | The one populated memory channel | `Win32_PhysicalMemory`, `Controller0-ChannelA-DIMM0` |

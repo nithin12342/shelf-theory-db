@@ -8,6 +8,23 @@
 //      Cost = 10 rows + the name-string lookups for those 10 names.
 use std::time::Instant;
 
+// BASELINE PROVENANCE. The measured Q2, Q3 and Q1 baselines below come
+// from results/imdb_shelf_runs.json, key `idle_control_20261021_1634`,
+// which is the fastest of the four committed runs.
+//
+// MEASUREMENT CLASS. The full-scan floor and the pre-sorted floor below
+// are MODEL numbers. The model walks a synthetic fiber of the right size
+// and the right row width. The real pre-aggregated scan is measured by
+// q2_decompose.rs, and its floor is 15.6 to 62.9 ms over four runs.
+
+// The measured Q2 query time. Source: results/imdb_shelf_runs.json, key
+// `idle_control_20261021_1634`, field q2.query_ms.
+const MEASURED_Q2_MS: f64 = 10_804.2;
+// The measured Q3 query time. Source: the same key, field q3.query_ms.
+const MEASURED_Q3_MS: f64 = 1_472.1;
+// The measured Q1 query time. Source: the same key, field q1.query_ms.
+const MEASURED_Q1_MS: f64 = 159.4;
+
 fn main() {
     // The Q2 fiber shape: per-name aggregate for the qualifying titles.
     // The qualifying set is 2,574,528 fibers (measured in results/fiber.json).
@@ -41,9 +58,17 @@ fn main() {
     for i in 0..10u64 {
         acc = acc.wrapping_add(i * 16);
     }
-    let top_ms = t1.elapsed().as_secs_f64() * 1e3;
+    let top_ms_raw = t1.elapsed().as_secs_f64() * 1e3;
+    // The timer cannot resolve a 10-row read on some runs, so the floor is
+    // set at one nanosecond. Every speedup below uses that floor, and the
+    // printed raw value says whether the timer resolved the loop.
+    const TIMER_FLOOR_MS: f64 = 1e-6;
+    let top_ms = top_ms_raw.max(TIMER_FLOOR_MS);
     std::hint::black_box(acc);
-    println!("FIBER_TOP10_PRESORTED rows=10 bytes=160 ms={top_ms:.6}");
+    println!(
+        "FIBER_TOP10_PRESORTED rows=10 bytes=160 ms={top_ms_raw:.6} \
+         (floor used {top_ms:.6} ms, the timer resolution)"
+    );
 
     // C. The 10 name-string lookups: random probes into the name blob.
     //    At the MEASURED DRAM latency of 133.61 ns.
@@ -59,14 +84,22 @@ fn main() {
     let floor_sorted = top_ms + probes_ms;
     println!("PROJECTED_Q2_floor_fullscan_ms={floor_scan:.2}");
     println!("PROJECTED_Q2_floor_presorted_ms={floor_sorted:.4}");
-    println!("MEASURED_Q2_ms=10804.2");
+    println!("MEASURED_Q2_ms={MEASURED_Q2_MS}");
     println!(
         "PROJECTED_Q2_speedup fullscan={:.0}x presorted={:.0}x",
-        10804.2 / floor_scan,
-        10804.2 / floor_sorted
+        MEASURED_Q2_MS / floor_scan,
+        MEASURED_Q2_MS / floor_sorted
     );
 
     // The same for Q3 (8 decade groups) and Q1.
-    println!("PROJECTED_Q3_presorted_ms={:.4} speedup={:.0}x", top_ms, 1472.1 / top_ms);
-    println!("PROJECTED_Q1_presorted_ms={:.4} speedup={:.0}x", top_ms, 159.4 / top_ms);
+    println!(
+        "PROJECTED_Q3_presorted_ms={:.4} speedup={:.0}x",
+        top_ms,
+        MEASURED_Q3_MS / top_ms
+    );
+    println!(
+        "PROJECTED_Q1_presorted_ms={:.4} speedup={:.0}x",
+        top_ms,
+        MEASURED_Q1_MS / top_ms
+    );
 }

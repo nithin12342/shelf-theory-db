@@ -16,9 +16,9 @@ Rows = the question asked. Columns = the answer and the strongest evidence for i
 |---|---|---|---|
 | Q1 | Can the architecture be improved drastically? | **Yes, and by 100x to 500,000x, but not by tuning the kernel.** The wins are in what the query reads, not how fast it reads it. | Sections 4, 5 |
 | Q2 | Is the architecture actually near the ceiling today? | **No. It is at 42% of the memory ceiling at one thread, and it is the wrong 42%.** The gap is a serial accumulator, not the bus. | Section 4.1 |
-| Q3 | How does it really stack up against the seven? | **It wins all 8 on query time, loses 2 of the 3 complex queries, and loses 7 of 8 on TOTAL time because of the 51.1 s setup.** | Section 6 |
+| Q3 | How does it really stack up against the seven? | **It wins all 8 on query time, loses 2 of the 3 complex queries, and loses 6 of 8 on TOTAL time because of the setup.** | Section 6 |
 | Q4 | What is the single biggest structural weakness? | **The IMDb bundle is a pre-parse, not a pre-aggregate, so the join still runs at query time.** | Section 5.1 |
-| Q5 | What is the hardest physical limit? | **The 51.1 s bundle build against DuckDB's 0.1 s load. A 511x setup gap, and it makes ShelfDB slower on total time against 7 of 8 engines.** | Section 6.2 |
+| Q5 | What is the hardest physical limit? | **The 51.1 s bundle build against DuckDB's 0.1 s load. A 511x setup gap, and it makes ShelfDB slower on total time against 6 of 8 engines at the benchmark build.** | Section 6.2 |
 
 ---
 
@@ -66,9 +66,11 @@ Source: `imdb_multi_engine.json` (run `20261021_1551` and `20261020_1531`), `imd
 |---|---|---|---|---|
 | Q1, filter plus aggregate | 301 | 350 | 4,200 | 6x |
 | Q2, 4-table top-10 | 1,573 | 12,531 | 101,920 | 7x |
-| Q3, 4-table decade rollup | — | 2,548 total | 76,800 | 30x |
+| Q3, 4-table decade rollup | n/a | 2,548 total | 76,800 | 30x |
 
 Source: bench stdout, 2026-10-22 09:00 local. The bench also printed `gate_q1_fast=FAIL`, because the box was loaded during that run.
+
+**These three rows are the run 3 values. All four committed runs of the same binary and the same bundle are archived in imdb_shelf_runs.json, and they spread widely: Q1 159.4 ms to 349.6 ms, Q2 10,804.2 ms to 21,493.8 ms, Q3 1,472.1 ms to 2,539.3 ms, suite wall 13,191.4 ms to 26,689.2 ms.** The comparisons in section 6 use the matrix window run, which shares its window with the six engines.
 
 ### Table 3: The TPC-H fiber, the one genuine pre-aggregate
 
@@ -128,7 +130,7 @@ The probe's decomposition model for Q1 (tool `q1_decompose.rs`, this session):
 | Ratings hash build | 65.6 to 167.5 | 1,721,477 inserts at 38.1 to 97.3 ns each |
 | Basics scan and probes | 189.2 to 247.0 | 12,866,375 rows, 3,216,590 probes at 58.8 to 76.8 ns each |
 | **Model total** | **254.8 to 414.6** | |
-| **Measured query** | **159.4** | `imdb_shelf.json`, idle run |
+| **Measured query** | **159.4** | `imdb_shelf_runs.json`, idle control run |
 
 **The model is 1.6x to 2.6x SLOWER than the real code.** A model that over-predicts cost is not a floor. The real code is faster because the measured Q1 filter rejects most rows before probing, and because the hardware prefetcher handles the sequential basics scan.
 
@@ -145,7 +147,7 @@ Tool `q2_decompose.rs`, this session:
 | Names index build | 1,160 to 2,043 | 15,738,257 inserts at 73.7 to 129.8 ns each |
 | Edge scan | 792 to 1,107 | 6,386,000 edges, 648 MB, at 0.61 to 0.86 GB/s |
 | **Model total** | **1,952 to 3,026** | |
-| **Measured query** | **12,531** | `imdb_fiber_bench`, this session |
+| **Measured query** | **12,531** | `imdb_shelf_runs.json`, run 3 |
 
 **The model is 4.1x to 6.4x faster than the real code.** The gap is the 648 MB `q2edges` section, which the real query also has to resolve against 15.7M names, plus the name string blob walk. The model does not reproduce the blob walk, which is 219 MB of NUL-terminated strings walked with a per-name offset array.
 
@@ -153,15 +155,15 @@ Tool `q2_decompose.rs`, this session:
 
 ### 4.4 What the Q2 floor actually is, with a genuine pre-aggregate
 
-If `q2edges` were pre-aggregated into one row per name, the query would never touch the 648 MB. Tool `q2_decompose.rs` measures that path:
+If `q2edges` is pre-aggregated into one row per name, the query does not touch the 648 MB. Tool `q2_decompose.rs` measures that path:
 
 | Path | Bytes | Time (ms) | Rate (GB/s) |
 |---|---|---|---|
 | Current: raw edges plus name resolution | 679,260,080 | 12,531 (measured) | 0.05 |
-| Pre-aggregated scan, 15.7M rows | 251,812,112 | 22.0 to 48.7 (measured) | 5.17 to 11.44 |
-| Plus 10 name probes at 133.61 ns | 160 | 0.0013 | — |
+| Pre-aggregated scan, 15.7M rows | 251,812,112 | 15.6 to 79.7 (measured, 8 runs) | 3.16 to 16.14 |
+| Plus 10 name probes at 133.61 ns | 160 | 0.0013 | n/a |
 
-**Q2 floor: 22.0 to 48.7 ms against 12,531 ms measured, a 257x to 569x gain.** The break-even is 4 queries against the 51,100 ms bundle build.
+**Q2 floor: 15.6 to 79.7 ms against 12,531 ms measured, a 157x to 803x gain.** The break-even is 4 queries against the 51,100 ms bundle build, and 9 queries against the 112,721 ms forced full rebuild.
 
 ### 4.5 The CRC is a hidden second pass, and it is not the bottleneck
 
@@ -173,7 +175,7 @@ The bundle verifies a CRC32C over every section it fetches, so every fetch moves
 | Q2 | 1,097,898,654 | 57 ms | 220 to 593 ms | 8.11x |
 | Q3 | 306,779,567 | 16 ms | 61 to 166 ms | 8.11x |
 
-**But the measured loads account for only 17% of that estimate** (Q1: 11 + 40 = 51 ms predicted against 301 ms measured; Q2: 57 + 220 = 277 ms against 1,573 ms measured). The load is dominated by something else, which is the file read from the operating system, not by the CRC and not by the bus.
+**But the measured loads account for only 17% of that estimate** (Q1: 11 + 40 = 51 ms predicted against 301 ms measured. Q2: 57 + 220 = 277 ms against 1,573 ms measured). The load is dominated by something else, which is the file read from the operating system, not by the CRC and not by the bus.
 
 **This is the correct adversarial read: the load is not a bandwidth problem and not a checksum problem. It is a file-read problem, and the file is 1,372 MB.**
 
@@ -225,10 +227,10 @@ Compare with the TPC-H fiber, which is a genuine pre-aggregate: one row per (cus
 | Query | ShelfDB (ms) | DuckDB (ms) | Margin |
 |---|---|---|---|
 | Q1, filter plus aggregate | 197.8 | 345.7 | 1.75x faster |
-| **Q2, 4-table top-10** | **12,531** | **2,843.9** | **4.41x slower** |
-| **Q3, 4-table decade rollup** | **2,548** | **864.9** | **2.95x slower** |
+| **Q2, 4-table top-10** | **18,333.3** | **2,843.9** | **6.45x slower** |
+| **Q3, 4-table decade rollup** | **1,746.9** | **864.9** | **2.02x slower** |
 
-Source: `imdb_fiber_bench` this session, `imdb_job.json`.
+Source: `imdb_shelf_matrixwindow.json`, `imdb_job.json`. The shelf figures are the matrix window run, which shares its window with the six engines.
 
 **These are the only two losses in the entire matrix.** Both are joins over 6.4M and 12.9M-row edge sets, and both are shapes with no pre-aggregate. Section 4.4 shows the fix and its cost.
 
@@ -248,22 +250,22 @@ The 512 GB NVMe drive's 300 terabytes-written rating runs out in 3.2 years at 0.
 
 **Rows = architecture category. Columns = the measured query time, the load time, and both margins.**
 
-ShelfDB total is its 51.1 s bundle build plus its 197.8 ms query, which is 51,298 ms.
+ShelfDB total is its bundle build plus its Q1 section load plus its Q1 query. That is 51,100 + 151.1 + 197.8 = 51,449 ms at the benchmark build, and 112,721 + 151.1 + 197.8 = 113,070 ms at the forced full rebuild.
 
 | Architecture | Opponent | Query (ms) | Load (s) | ShelfDB query margin | Opponent total (ms) | ShelfDB total margin |
 |---|---|---|---|---|---|---|
 | Wide-column | ScyllaDB | 208.3 | 21.35 | 1.05x faster | 21,558 | **0.42x, slower** |
 | In-memory key-value | Redis | 255.5 | 4.14 | 1.29x faster | 4,396 | **0.09x, slower** |
-| NoSQL wide-column | ScyllaDB (CQL) | 271.0 | 24.80 | 1.37x faster | 25,071 | **0.49x, slower** |
+| NoSQL wide-column | ScyllaDB (CQL) | 271.1 | 97.44 | 1.37x faster | 97,715 | **1.90x, faster** |
 | Columnar OLAP | DuckDB | 345.7 | 0.10 | 1.75x faster | 446 | **0.01x, slower** |
 | Embedded | SQLite | 757.5 | 7.89 | 3.83x faster | 8,648 | **0.17x, slower** |
 | Row store | MariaDB | 970.9 | 26.99 | 4.90x faster | 27,961 | **0.55x, slower** |
 | Graph | Neo4j | 1,089.5 | 83.69 | 5.51x faster | 84,780 | 1.65x faster |
 | Row store | PostgreSQL | 1,918.1 | 46.20 | 9.69x faster | 48,118 | **0.94x, slower** |
 
-**This is the most important correction in the report. ShelfDB is faster on query time against all eight, and slower on TOTAL time against seven of the eight.** The only total-time win is against Neo4j, whose 83.69 s graph load is the slowest of all.
+**This is the most important correction in the report. ShelfDB is faster on query time against all eight, and slower on TOTAL time against six of the eight at the benchmark build.** The two total-time wins are against Neo4j, whose 83.69 s graph load is the slowest of all, and against ScyllaDB (CQL), whose 97.4 s write-time join is the price of the write-time model. Both wins reverse if the build is the 112,721 ms forced full rebuild.
 
-**The 51.1 s bundle build is the reason.** It is 511 times DuckDB's load, and every opponent loads in less time than ShelfDB's build except Neo4j.
+**The bundle build is the reason.** It is 511 times DuckDB's load at the benchmark build and 1,127 times at the full rebuild, and every opponent loads in less time than ShelfDB's build except Neo4j and ScyllaDB (CQL).
 
 **This total-time column does not exist in `RUNTIME_COMPARISON.md`.** The table there has a "One-time load (s)" column that carries the bundle build time, but the engines' load times live in a different table, so no reader can compute the total-time comparison. Adding it is a documentation change, not a code change, and it is the single most important correction this analysis produces.
 
@@ -325,29 +327,29 @@ ShelfDB total is its 51.1 s bundle build plus its 197.8 ms query, which is 51,29
 | # | Change | Measured gain | Cost | Risk |
 |---|---|---|---|---|
 | 1 | Four accumulators in the partition scan | **1.40x** on the 1-thread scan | About 10 lines | Very low. The aggregate is unchanged, and the probe already checks that the two kernels agree to 9.28e-13. |
-| 2 | Pre-aggregate a fiber for Q2's shape | **257x to 569x** on Q2, 22.0 to 48.7 ms against 12,531 ms | One build, 51.1 s | Low. The build is the same join, paid once. |
-| 3 | Pre-aggregate a fiber for Q3's shape | **231x** on Q3, 11.0 ms against 2,548 ms | One build | Low. |
+| 2 | Pre-aggregate a fiber for Q2's shape | **157x to 803x** on Q2, 15.6 to 79.7 ms against 12,531 ms | One build, 51.1 s | Low. The build is the same join, paid once. |
+| 3 | Pre-aggregate a fiber for Q3's shape | **4,120x to 20,313x** on Q3, 0.086 ms to 0.424 ms against 1,746.9 ms | One build | Low. |
 | 4 | Size the fiber domains to the measured LLC | Removes a 5.3x over-provisioning of the ghost replicas | One constant | Low. |
 | 5 | Make the bundle load incremental, so a query fetches only the bytes it needs | The load is 301 ms for 201.7 MB, which is 0.67 GB/s against a 1.61 GB/s uncached NVMe read | Medium | Medium. The CRC and the section layout both change. |
-| 6 | Publish the total-time column in the comparison tables | Changes 7 of 8 verdicts | Documentation | None. |
+| 6 | Publish the total-time column in the comparison tables | Changes 6 of 8 verdicts | Documentation | None. |
 
 **The combined effect of 1, 2 and 3 on the IMDb suite**, using the measured floors:
 
 | Query | Now (ms) | After (ms) | Gain |
 |---|---|---|---|
-| Q1 | 197.8 | 197.8 minus 44.6 for the accumulator | 1.22x |
-| Q2 | 12,531 | 22.0 to 48.7 | 257x to 569x |
-| Q3 | 2,548 | 11.0 | 231x |
-| Suite wall, cached | 21,180 | 231 | 92x |
+| Q1 | 197.8 | 141.3, the measured 1.40x accumulator gain | 1.40x |
+| Q2 | 18,333.3 | 15.6 to 79.7 | 230x to 1,175x |
+| Q3 | 1,746.9 | 0.086 to 0.424 | 4,120x to 20,313x |
+| Suite wall, cached | 21,180.2 | 157.0 to 221.4 | 96x to 135x |
 
-### 7.1 What would make it even better, beyond the measurable list
+### 7.1 What can make it even better, beyond the measurable list
 
-These are directions the analysis supports but that were not measured in this session. Each is stated with what would have to be measured to accept it.
+These are directions the analysis supports but that were not measured in this session. Each is stated with what must be measured to accept it.
 
 | Direction | Reasoning | What must be measured |
 |---|---|---|
-| One fiber per query shape, discovered from the query log | The break-even is 4 queries, so a shape that runs more than 4 times pays for its build | A shape-frequency histogram |
-| Answer fibers that store the answer, not the source columns | Section 4.4 measured 22.0 to 48.7 ms for a pre-aggregated Q2 against 12,531 ms for the raw path | Already measured |
+| One fiber per query shape, discovered from the query log | The break-even is 4 queries at the benchmark build and 9 at the full rebuild, so a shape that runs more than 4 times pays for its build | A shape-frequency histogram |
+| Answer fibers that store the answer, not the source columns | Section 4.4 measured 15.6 ms to 79.7 ms for a pre-aggregated Q2 against 12,531 ms for the raw path | Already measured |
 | Compression of the fiber sections | The bundle is 1,372 MB and the load is 301 ms for 201.7 MB. A compressed answer section is smaller | A compression ratio and a decode rate |
 | The TPC-H design applied to the IMDb shapes | The TPC-H fiber runs at 7.9 ms and wins 44x to 950x. The IMDb shape is the same idea at a larger scale | Already measured for Q2 and Q3 |
 
@@ -355,18 +357,18 @@ These are directions the analysis supports but that were not measured in this se
 
 ## 8. The theoretical maximum, revised against these findings
 
-The previous projection claimed a floor of 0.0014 ms for Q2. **That was wrong, and this analysis shows why.** It assumed the answer was pre-materialized AND that the fiber was stored pre-sorted so the top 10 was a 10-row read. The measured pre-aggregated scan of 15.7M rows takes 22.0 ms, not 0.0014 ms.
+The previous projection claimed a floor of 0.0014 ms for Q2. **That was wrong, and this analysis shows why.** It assumed the answer was pre-materialized AND that the fiber was stored pre-sorted so the top 10 was a 10-row read. The measured pre-aggregated scan of 15.7M rows takes 15.6 ms to 79.7 ms over 8 runs, not 0.0014 ms.
 
 **Revised floors, all measured or derived from measured rates:**
 
 | Query | Floor (ms) | Basis | Gain from now |
 |---|---|---|---|
 | Q1 | 10.3 | 201.7 MB at the measured 19.2 GB/s bus peak | 15.5x |
-| Q2 | 22.0 to 48.7 | Measured pre-aggregated scan at 5.17 to 11.44 GB/s | 257x to 569x |
-| Q3 | 11.0 to 24.2 | Same scan, 8 groups | 105x to 231x |
+| Q2 | 15.6 to 79.7 | Measured pre-aggregated scan at 3.16 to 16.14 GB/s, 8 runs | 157x to 803x |
+| Q3 | 0.086 to 0.424 | Measured answer-fiber read of the 44,906-row answer set, 8 runs | 3,472x to 17,118x |
 | TPC-H join | 7.9 | **Measured**, cached bundle | Already achieved |
 
-**The corrected Q1 floor of 10.3 ms is a bandwidth floor, and the 15.5x is not achievable with the current design** because the join itself costs more than the bandwidth. The achievable Q1 target is the 44,906-row answer fiber, which section 4.4 measured at 0.089 to 0.162 ms.
+**The corrected Q1 floor of 10.3 ms is a bandwidth floor, and the 15.5x is not achievable with the current design** because the join itself costs more than the bandwidth. The achievable Q1 target is the 44,906-row answer fiber, which section 4.4 measured at 0.086 ms to 0.424 ms over 8 runs.
 
 **The corrected TPC-H figure of 7.9 ms is the honest ceiling for this architecture on a pre-aggregated workload, and it is already achieved.** That is the strongest evidence that the design is right when the shape matches.
 
@@ -385,7 +387,7 @@ The previous projection claimed a floor of 0.0014 ms for Q2. **That was wrong, a
 | Q1 partition scan, 1 thread | 201.7 MB | 0.94 | 1.95% |
 | Q1 answer fiber | 718 KB | 4.4 to 19.2 | 23% to 100% |
 
-**The Q1 partition scan moves 0.94 bytes per cycle while the bus could move 48.0 at the same clock.** That is a stall, and 1.95% of the ceiling is the accumulator chain. The hash build is 16,397,068 of the 21,534,146 cycles, so three quarters of the waste is the serial hash insert, not the scan. Fixing it is worth 1.40x on speed and proportionally on energy, because the stalled cycles are the ones that burn power without producing work.
+**The Q1 partition scan moves 0.94 bytes per cycle while the bus can move 48.0 at the same clock.** That is a stall, and 1.95% of the ceiling is the accumulator chain. The hash build is 16,397,068 of the 21,534,146 cycles, so three quarters of the waste is the serial hash insert, not the scan. Fixing it is worth 1.40x on speed and proportionally on energy, because the stalled cycles are the ones that burn power without producing work.
 
 **The architectural claim holds**: the shelf representation reduces the work, and therefore the energy, by reading the answer instead of the data. The TPC-H fiber demonstrates it at 7.9 ms for a 40.6 MB bundle.
 
@@ -393,7 +395,7 @@ The previous projection claimed a floor of 0.0014 ms for Q2. **That was wrong, a
 
 ## 10. What this analysis does not claim
 
-- **It does not claim ShelfDB is faster overall.** On IMDb total time it is faster against 1 of 8 engines, and slower against 7, because of the 51.1 s setup. On query time it is faster against all 8.
+- **It does not claim ShelfDB is faster overall.** On IMDb total time it is faster against 2 of 8 engines at the benchmark build, and slower against 6. At the forced full rebuild it is faster against 0 of 8. On query time it is faster against all 8.
 - **It does not claim the fiber is a pre-aggregate for the IMDb shape.** It is a pre-parse. The TPC-H fiber is the pre-aggregate, and the two are different structures under one name.
 - **It does not measure watts.** No power counter exists on this host. The efficiency claim rests on useful bytes per cycle, which is a proxy.
 - **The Q1 and Q2 models do not reproduce the real code.** They are 2.6x and 6.4x faster, so they are used only to locate the bottleneck, never to predict a time.
@@ -416,7 +418,7 @@ The previous projection claimed a floor of 0.0014 ms for Q2. **That was wrong, a
 | TPC-H cached query 7.9 ms, load 67.4 ms | `fiber_join_bench` stdout, this session |
 | The Q1 and Q2 decomposition models | `tools/q1_decompose.rs`, `tools/q2_decompose.rs` |
 | The Q1 answer-fiber read, 0.089 to 0.162 ms | `tools/q1_decompose.rs` PART4 |
-| The Q2 pre-aggregated scan, 22.0 to 48.7 ms | `tools/q2_decompose.rs` PART5 |
+| The Q2 pre-aggregated scan, 15.6 ms to 79.7 ms | `tools/q2_decompose.rs` PART5, 8 runs |
 | The hash build and probe costs | `tools/cpu_floor.rs` |
 | The CRC second pass | `tools/crc_pass.rs` |
 | The 1.40x accumulator gain | `physical_limits_probe` section H, `H_accumulator_*` |

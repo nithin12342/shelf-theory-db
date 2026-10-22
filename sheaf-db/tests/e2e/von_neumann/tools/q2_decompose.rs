@@ -4,6 +4,12 @@
 //
 // STANDALONE TOOL. Compile and run from this directory:
 //   rustc -O q2_decompose.rs -o q2_decompose.exe && ./q2_decompose.exe
+//
+// BASELINE PROVENANCE. The Q2 baseline below is the run recorded in
+// results/imdb_shelf_runs.json, key `run3_20261022_0936`, field
+// q2.query_ms. The other three committed runs give Q2 query times of
+// 10,804.2 ms, 18,333.3 ms and 21,493.8 ms, so the baseline sits in the
+// middle of the range.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -12,6 +18,11 @@ const N_NAMES: u64 = 15_738_257;
 const N_EDGES: u64 = 6_386_000; // q2edges is 679,260,080 B over 16 B/edge
 const EDGE_ROW: u64 = 16; // name_id u64, title_id u64
 const EDGES_BYTES: u64 = 679_260_080;
+
+// The measured Q2 query time. Source: results/imdb_shelf_runs.json, key
+// `run3_20261022_0936`, field q2.query_ms.
+const Q2_MEASURED_MS: f64 = 12_531.0;
+const Q2_MEASURED_LOAD_MS: f64 = 1_572.6;
 
 fn main() {
     // ---- PART 1: the names index build, over 15.7M rows ----
@@ -53,7 +64,10 @@ fn main() {
 
     // ---- PART 3: the total model, against the measured query ----
     let total = names_build_ms + edge_ms;
-    println!("Q2_PART3 total_model_ms={total:.0} (measured query_ms=12531, load_ms=1573)");
+    println!(
+        "Q2_PART3 total_model_ms={total:.0} (measured query_ms={Q2_MEASURED_MS}, \
+         load_ms={Q2_MEASURED_LOAD_MS}, results/imdb_shelf_runs.json run3_20261022_0936)"
+    );
 
     // ---- PART 4: the bandwidth floor for the edge scan alone ----
     // 647.8 MB at the MEASURED bus peak.
@@ -101,11 +115,22 @@ fn main() {
     let q2_floor = agg_ms + 10.0 * 133.61 / 1e6;
     println!(
         "Q2_PART6 q2_floor_ms={q2_floor:.1} speedup_vs_measured={:.0}x",
-        12_531.0 / q2_floor
+        Q2_MEASURED_MS / q2_floor
     );
     println!(
         "Q2_PART6 break_even_queries build={BUNDLE_BUILD_MS:.0} save_per_query={:.0} -> {:.0} queries",
-        12_531.0 - q2_floor,
-        BUNDLE_BUILD_MS / (12_531.0 - q2_floor)
+        Q2_MEASURED_MS - q2_floor,
+        BUNDLE_BUILD_MS / (Q2_MEASURED_MS - q2_floor)
     );
+    // The same floor against the fastest and the slowest committed Q2 runs.
+    for (label, ms) in [
+        ("idle_control_10804", 10_804.2f64),
+        ("matrix_window_18333", 18_333.3),
+        ("latest_21494", 21_493.8),
+    ] {
+        println!(
+            "Q2_PART6 speedup_vs_{label}_ms={ms:.1} -> {:.0}x",
+            ms / q2_floor
+        );
+    }
 }

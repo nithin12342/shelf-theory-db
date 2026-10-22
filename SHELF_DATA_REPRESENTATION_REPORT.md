@@ -224,7 +224,7 @@ Every row waits for the previous row's multiply-add to retire. The memory system
 |---|---|---|---|
 | 1 | 5.28 | 9.09 | Serial dependency chain |
 | 4 | 3.78 | 12.70 | Four independent chains |
-| difference | — | — | **1.40x faster on the same bytes** |
+| difference | n/a | n/a | **1.40x faster on the same bytes** |
 
 The aggregate is unchanged. The relative difference is 2.1e-7, which is double-precision rounding over six million additions. The fused structure-of-arrays kernel already uses four lanes and is 1.33x faster at one thread.
 

@@ -1,19 +1,34 @@
 # Projection: the theoretical maximum against the seven compared databases
 
-> **CORRECTION, 2026-10-22 09:36:13.** The Q2 floor in this document is wrong, and
-> `ADVERSARIAL_ANALYSIS.md` explains why. The 0.0014 ms figure assumed the fiber is
-> stored pre-sorted so the top 10 is a ten-row read. The measured pre-aggregated scan
-> of 15.7M rows is 22.0 to 48.7 ms, not 0.0014 ms. The Q2 speedup against DuckDB is
-> 257x to 569x, not 20 million times. The Q1 and Q3 floors need the same correction.
-> The total-time column is also missing: ShelfDB is faster on query time against all
-> eight opponents and slower on total time against seven of the eight, because of the
-> 51.1 s bundle build against DuckDB's 0.1 s load.
-> See `ADVERSARIAL_ANALYSIS.md` section 6 and `ARCHITECTURE_GAINS.md` for the
-> corrected numbers and the improvements that close the gap.
+> **SUPERSEDED, 2026-10-22 11:20:00.** The body below is the historical record of the
+> projection made on 2026-10-21. Every figure in it is superseded. Read
+> `SEVEN_DATABASE_AREA_COMPARISON.md` for the current numbers.
+>
+> The corrections are these.
+>
+> 1. **The Q2 floor is wrong.** The 0.0014 ms figure assumed the fiber is stored
+>    pre-sorted so the top 10 is a ten-row read. The measured pre-aggregated scan of
+>    15.7M rows is 15.6 ms to 79.7 ms over 8 runs, not 0.0014 ms. The Q2 gain against
+>    DuckDB is 230x to 1,175x, not 20 million times.
+> 2. **The Q1 and Q3 floors need the same correction.** The Q3 floor is the measured
+>    answer-fiber read of 0.086 ms to 0.424 ms, not 0.0001 ms.
+> 3. **The 159.4 ms, 10,804.2 ms and 1,472.1 ms baselines are the idle control run.**
+>    They are still real measurements. The file that held them, `imdb_shelf.json`,
+>    has since been refreshed. All four committed runs are archived in
+>    `results/imdb_shelf_runs.json`.
+> 4. **The total-time column was missing.** ShelfDB is faster on query time against
+>    all eight opponents and slower on total time against six of the eight at the
+>    51,100 ms benchmark build, and against seven of the eight at the 112,721 ms
+>    forced full rebuild.
+> 5. **The build cost has a range.** The benchmark build is 51,100 ms and the forced
+>    full rebuild is 112,721 ms.
+>
+> See `ADVERSARIAL_ANALYSIS.md` section 6, `ARCHITECTURE_GAINS.md` and
+> `SEVEN_DATABASE_AREA_COMPARISON.md` for the corrected numbers.
 
 **Report timestamp:** 2026-10-21 22:41:18 +05:30 (2026-10-21 17:11:18 UTC)
 **Basis commit:** `26e590f` (branch `fiber-bundle-replacement`)
-**Question:** if the shelf architecture reached its theoretical maximum, what would the numbers be in complex environmental queries, how much efficiency would be gained, and how many times faster than the seven databases that were compared?
+**Question:** if the shelf architecture reached its theoretical maximum, what numbers are possible in complex environmental queries, how much efficiency is gained, and how many times faster than the seven databases that were compared?
 
 **Rule for this report.** The floor for each query is computed from the bytes that query must read, divided by the measured memory bus bandwidth. The formula was validated against a known measurement before use. Every input is either measured in this repository or taken from a named published source.
 
@@ -171,7 +186,7 @@ The build cost is 51,100 ms, measured in the `imdb_fiber_bench` run and recorded
 - **The build cost dominates for a cold query.** A single query against a cold bundle is 51.1 s, not 0.039 ms. The projection assumes the bundle is cached, which is the deployed design.
 - **A fiber per query shape does not scale to unlimited shapes.** Each shape costs a build. A workload with thousands of distinct shapes cannot pre-aggregate them all. The architecture wins where the shape set is small and stable, which is the analytical workload it was built for.
 - **The opponents were measured on this box and are not optimized.** DuckDB at 346 ms on Q1 and 2,844 ms on Q2 is DuckDB on this hardware, not DuckDB at its best.
-- **The 25.6 GB/s ceiling assumes one channel.** This host has one populated DIMM. A second channel would raise the bus ceiling, and the projection would rise with it.
+- **The 25.6 GB/s ceiling assumes one channel.** This host has one populated DIMM. A second channel raises the bus ceiling, and the projection rises with it.
 - **The Q1 floor assumes a fiber for Q1's shape.** Today the IMDb bundle has fibers for Q2 and Q3 only. Q1 currently runs against the base, and it wins anyway at 1.05x against ScyllaDB, because the base scan is still cheaper than a full hash join for a filter plus aggregate.
 
 ---
@@ -180,14 +195,14 @@ The build cost is 51,100 ms, measured in the `imdb_fiber_bench` run and recorded
 
 | Quantity | Where it is verified |
 |---|---|
-| Q1, Q2, Q3 measured times | `tests/e2e/realtime_bench/results/imdb_shelf.json` |
+| Q1, Q2, Q3 measured times | `tests/e2e/realtime_bench/results/imdb_shelf_runs.json` |
 | The seven opponents' times | `RUNTIME_COMPARISON.md` section 1, IMDb Q1 rows |
 | Section row counts and byte widths | `crates/sheaf-engine/src/bin/imdb_fiber_bench.rs` |
 | Measured bus bandwidth 19.2 GB/s | `mt_scan_bench`, 48 MB in 2.5 ms at 4 threads |
 | DRAM latency 133.61 ns | `physical_limits_probe` section A, `A_latency_ns set_kb=131072` |
 | Hash build 1,821 to 2,154 ms and probes 253 to 313 ms | `tests/e2e/von_neumann/tools/cpu_floor.rs`, section 3.1 |
 | Fiber scan 3.47 ms and pre-sorted read 0.0001 ms | `tests/e2e/von_neumann/tools/q2_projection.rs`, section 3.2 |
-| Bundle build 51,100 ms | `CONVERSATION_LOG_2026-10-21.md` event 10 |
+| Bundle build 51,100 ms and 112,721 ms | `CONVERSATION_LOG_2026-10-21.md` event 10, and the forced rebuild of 2026-10-22 |
 | Bundle open 0.0 ms | `imdb_shelf.json`, `bundle_open_ms` |
 | The 1.40x accumulator gain | `physical_limits_probe` section H |
 | Formula validation, 48 MB in 2.44 ms | `mt_scan_bench` cross-check |

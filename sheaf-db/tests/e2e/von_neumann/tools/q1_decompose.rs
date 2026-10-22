@@ -14,6 +14,13 @@
 //
 // STANDALONE TOOL. Compile and run from this directory:
 //   rustc -O q1_decompose.rs -o q1_decompose.exe && ./q1_decompose.exe
+//
+// BASELINE PROVENANCE. The Q1 baseline below is the idle control run in
+// results/imdb_shelf_runs.json, key `idle_control_20261021_1634`. It was
+// measured with the same binary and the same bundle as every other run,
+// with the box idle. The other three committed runs give Q1 query times of
+// 197.8 ms, 274.9 ms and 349.6 ms, so the baseline is the fastest of the
+// four. The speedup lines below are therefore the best case.
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -23,6 +30,15 @@ const N_BASICS: u64 = 12_866_375;
 const RATING_ROW: u64 = 20; // id u64, avg f32, votes i64
 const BASIC_ROW: u64 = 13; // id u64, year i32, flags u8
 const MIN_YEAR: i32 = 2010;
+
+// The measured Q1 query time. Source: results/imdb_shelf_runs.json, key
+// `idle_control_20261021_1634`, field q1.query_ms.
+const Q1_MEASURED_MS: f64 = 159.4;
+// The IMDb bundle build. Source: results/imdb_shelf_runs.json, key
+// `bundle_setup_cost_ms`, field `benchmark_20261021`. A forced full rebuild
+// on 2026-10-22 measured 112,721 ms, so the setup cost has this range.
+const BUNDLE_BUILD_MS: f64 = 51_100.0;
+const BUNDLE_BUILD_FULL_REBUILD_MS: f64 = 112_721.0;
 
 fn main() {
     // ---- PART 1: the ratings hash build, over 1.72M rows ----
@@ -77,7 +93,10 @@ fn main() {
 
     // ---- PART 3: the total, compared with the measured query time ----
     let total = build_ms + scan_ms;
-    println!("Q1_PART3 total_model_ms={total:.1} (measured query_ms=159.4)");
+    println!(
+        "Q1_PART3 total_model_ms={total:.1} (measured query_ms={Q1_MEASURED_MS}, \
+         results/imdb_shelf_runs.json idle_control_20261021_1634)"
+    );
 
     // ---- PART 4: what a genuine ANSWER-FIBER for Q1's shape costs ----
     // The fiber holds one row per qualifying title: the 44,906 titles
@@ -107,7 +126,7 @@ fn main() {
     );
     println!(
         "Q1_PART4_speedup_vs_measured={:.0}x  vs_model={:.0}x",
-        159.4 / fiber_ms.max(1e-9),
+        Q1_MEASURED_MS / fiber_ms.max(1e-9),
         total / fiber_ms.max(1e-9)
     );
 
@@ -120,16 +139,25 @@ fn main() {
     // The IMDb bundle build was measured at 51,100 ms for the Q2+Q3
     // fibers (CONVERSATION_LOG_2026-10-21.md event 10).
     const BUNDLE_BUILD_MS: f64 = 51_100.0;
-    let q1_save: f64 = 159.4 - fiber_ms;
+    const BUNDLE_BUILD_FULL_REBUILD_MS: f64 = 112_721.0;
+    let q1_save: f64 = Q1_MEASURED_MS - fiber_ms;
     let q2_save: f64 = 10_804.2 - 0.0014;
     let q3_save: f64 = 1_472.1 - 0.0001;
     println!("Q1_PART6 build_ms={BUNDLE_BUILD_MS:.0}");
+    println!("Q1_PART6 build_ms_forced_full_rebuild={BUNDLE_BUILD_FULL_REBUILD_MS:.0}");
     println!(
         "Q1_PART6 break_even_queries Q1={:.0} Q2={:.0} Q3={:.0} all_three={:.0}",
         BUNDLE_BUILD_MS / q1_save.max(1e-9),
         BUNDLE_BUILD_MS / q2_save.max(1e-9),
         BUNDLE_BUILD_MS / q3_save.max(1e-9),
         BUNDLE_BUILD_MS / (q1_save + q2_save + q3_save)
+    );
+    println!(
+        "Q1_PART6 break_even_queries_at_full_rebuild Q1={:.0} Q2={:.0} Q3={:.0} all_three={:.0}",
+        BUNDLE_BUILD_FULL_REBUILD_MS / q1_save.max(1e-9),
+        BUNDLE_BUILD_FULL_REBUILD_MS / q2_save.max(1e-9),
+        BUNDLE_BUILD_FULL_REBUILD_MS / q3_save.max(1e-9),
+        BUNDLE_BUILD_FULL_REBUILD_MS / (q1_save + q2_save + q3_save)
     );
 
     // ---- PART 7: the EFFICIENCY metric, cycles per byte ----
