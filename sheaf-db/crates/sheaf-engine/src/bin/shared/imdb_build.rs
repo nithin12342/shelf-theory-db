@@ -215,6 +215,10 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
         parse_principals_range(&content, range, skip, &name_id)
     });
     let parse_ms = t_parse.elapsed().as_secs_f64() * 1e3;
+    // The read is separate from the parse, so the I/O share of the stage is
+    // measured and not asserted. On this host the read is 62,700 to 69,200 ms
+    // against a parse of 12,700 to 14,600 ms when the file is not in cache.
+    let read_ms = (t_parse - t0).as_secs_f64() * 1e3;
     let t_merge = Instant::now();
     let mut edges: Vec<u8> = Vec::with_capacity(64 << 20);
     // The per-thread count maps hold disjoint key sets, because every row
@@ -256,8 +260,8 @@ pub fn build(plan: &BuildPlan, sink: &mut dyn SectionSink) -> std::io::Result<Ve
         edges.len() / 16
     );
     println!(
-        "build principals split: parse {parse_ms:.0} ms, merge {merge_ms:.0} ms, sort {sort_ms:.0} ms, \
-         write {} MB",
+        "build principals split: read {read_ms:.0} ms, parse {parse_ms:.0} ms, merge {merge_ms:.0} ms, \
+         sort {sort_ms:.0} ms, write {} MB",
         pc.len() >> 20
     );
     reports.push(StageReport {

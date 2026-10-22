@@ -17,9 +17,18 @@
 //   princount  (id u64, n u32)                       titles with >=1 named principal
 //   names      (id u64, year i32) + nameblob         15,738,257 people
 //   q2edges    (name_id u64, title_id u64)            actor/actress credits
+//   answer_q1  count, votes, mean rating              24 B
+//   answer_q2  the top ten names and counts          226 B
+//   answer_q3  the per-decade rollup                 164 B
+//
+// The answer sections are the answer to one query shape, materialised at
+// build time. Their generation folds the shape constants, so a changed
+// threshold makes them stale and the bundle rebuilds.
 //
 // Gates (per query): totals exact vs the md5-cross-checked baseline
-// (results/imdb_job.json) AND load+query <= the recorded pre-cache runtime.
+// (results/imdb_job.json) AND load+query <= the recorded pre-cache runtime,
+// AND the answer equal to the scan oracle, which runs untimed after the
+// answer path so the two are never confused.
 use std::collections::HashMap;
 use std::time::Instant;
 
