@@ -26,13 +26,32 @@ unsafe impl Sync for Slot {}
 /// carry different checksums (transport vs storage); the gate asserts HW ==
 /// software-CRC-32C bit-exactness, never cross-algorithm equality.
 pub fn crc_hw(data: &[u8]) -> u32 {
+    crc_state_finish(crc_state_update(crc_state_init(), data))
+}
+
+/// The running CRC-32C state, before the first byte.
+///
+/// CRC-32C is a linear function of the byte stream, so a stream can be
+/// folded in chunks: update the state with each chunk and finish once at
+/// the end. The result equals `crc_hw` over the whole stream.
+pub fn crc_state_init() -> u32 {
+    0xFFFF_FFFF
+}
+
+/// Fold one chunk into the running CRC-32C state.
+pub fn crc_state_update(state: u32, data: &[u8]) -> u32 {
     #[cfg(target_arch = "x86_64")]
     {
         if std::is_x86_feature_detected!("sse4.2") {
-            return unsafe { crc_hw_sse42(data) };
+            return unsafe { crc_update_sse42(state, data) };
         }
     }
-    crc32c_soft(data)
+    crc32c_soft_update(state, data)
+}
+
+/// Close the running CRC-32C state.
+pub fn crc_state_finish(state: u32) -> u32 {
+    state ^ 0xFFFF_FFFF
 }
 
 /// Software CRC-32C (reflected poly 0x82F63B78), bit-exact with the SSE4.2
@@ -57,10 +76,32 @@ pub fn crc32c_soft(data: &[u8]) -> u32 {
     c ^ 0xFFFF_FFFF
 }
 
+/// The running software CRC-32C state. The chunked form of
+/// `crc32c_soft`, and the oracle for the chunked hardware form.
+pub fn crc32c_soft_update(state: u32, data: &[u8]) -> u32 {
+    static T: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
+    let t = T.get_or_init(|| {
+        let mut t = [0u32; 256];
+        for (i, s) in t.iter_mut().enumerate() {
+            let mut c = i as u32;
+            for _ in 0..8 {
+                c = if c & 1 == 1 { 0x82F63B78 ^ (c >> 1) } else { c >> 1 };
+            }
+            *s = c;
+        }
+        t
+    });
+    let mut c = state;
+    for &b in data {
+        c = t[((c ^ b as u32) & 0xFF) as usize] ^ (c >> 8);
+    }
+    c
+}
+
 #[cfg(target_arch = "x86_64")]
-unsafe fn crc_hw_sse42(data: &[u8]) -> u32 {
+unsafe fn crc_update_sse42(state: u32, data: &[u8]) -> u32 {
     use std::arch::x86_64::*;
-    let mut crc = 0xFFFF_FFFFu32;
+    let mut crc = state;
     let mut off = 0usize;
     while off + 8 <= data.len() {
         let c = u64::from_le_bytes(data[off..off + 8].try_into().unwrap());
@@ -70,7 +111,7 @@ unsafe fn crc_hw_sse42(data: &[u8]) -> u32 {
     for b in &data[off..] {
         crc = _mm_crc32_u8(crc, *b);
     }
-    crc ^ 0xFFFF_FFFF
+    crc
 }
 
 pub struct HwCrcRing {

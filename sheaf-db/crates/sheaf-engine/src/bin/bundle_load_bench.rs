@@ -24,8 +24,10 @@ use std::time::Instant;
 
 #[path = "shared/imdb_fiber.rs"]
 mod imdb_fiber;
-use imdb_fiber::BundleReader;
-use sheaf_storage::lsp::ring_wal::crc_hw;
+use imdb_fiber::{BundleReader, CRC_CHUNK};
+use sheaf_storage::lsp::ring_wal::{
+    crc_hw, crc_state_finish, crc_state_init, crc_state_update,
+};
 
 const BUNDLE: &str = r"D:\bench\data\imdb_fiber_bundle.bin";
 const SECTIONS: [&str; 2] = ["basics", "ratings"];
@@ -33,6 +35,8 @@ const SECTIONS: [&str; 2] = ["basics", "ratings"];
 fn main() {
     let path = std::env::args().nth(1).unwrap_or_else(|| BUNDLE.to_string());
     let file_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let mut crc_gate_chunks = 0u32;
+    let mut crc_gate_bad = 0u32;
 
     // ---- 1. open: header + index only ----
     let t = Instant::now();
@@ -81,6 +85,24 @@ fn main() {
         let crc_ms = t.elapsed().as_secs_f64() * 1e3;
         std::hint::black_box(crc);
 
+        // (3b) the same CRC, folded in 4 MiB chunks, which is the form the
+        // fused read uses. It must equal the whole-buffer CRC.
+        let t = Instant::now();
+        let mut state = crc_state_init();
+        let mut off = 0usize;
+        while off < raw.len() {
+            let end = (off + CRC_CHUNK).min(raw.len());
+            state = crc_state_update(state, &raw[off..end]);
+            off = end;
+        }
+        let stream_crc = crc_state_finish(state);
+        let stream_ms = t.elapsed().as_secs_f64() * 1e3;
+        if stream_crc == crc {
+            crc_gate_chunks = crc_gate_chunks.max(1);
+        } else {
+            crc_gate_bad += 1;
+        }
+
         // (4) the allocation alone: `vec![0u8; len]` zero-fills the whole
         // buffer before the read overwrites every byte of it.
         let t = Instant::now();
@@ -96,6 +118,25 @@ fn main() {
         f2.take(len).read_to_end(&mut rte).expect("read_to_end");
         let rte_ms = t.elapsed().as_secs_f64() * 1e3;
         std::hint::black_box(&rte);
+
+        // (6) the OLD production path, in one timed unit: seek, read_exact
+        // over the whole section, then one cold CRC pass. This is the
+        // before figure for the pipelined read, measured in the same run.
+        let t = Instant::now();
+        let serial_ms = {
+            let mut f3 = std::fs::File::open(&path).expect("file");
+            f3.seek(SeekFrom::Start(offset)).expect("seek");
+            let mut b = vec![0u8; len as usize];
+            f3.read_exact(&mut b).expect("read");
+            let c = crc_hw(&b);
+            std::hint::black_box(c);
+            t.elapsed().as_secs_f64() * 1e3
+        };
+        println!(
+            "LOAD_serial_vs_pipeline name={name} serial_ms={serial_ms:.3} pipeline_ms={prod_ms:.3} \
+             gain_x={:.2}",
+            serial_ms / prod_ms
+        );
 
         let gbs_read = len as f64 / raw_ms / 1e6;
         let gbs_crc = len as f64 / crc_ms / 1e6;
@@ -114,6 +155,15 @@ fn main() {
             "LOAD_alloc name={name} zero_fill_ms={alloc_ms:.3} read_to_end_ms={rte_ms:.3} \
              saved_ms={:.3}",
             alloc_ms + raw_ms - rte_ms
+        );
+        // The fused read is the production path (1). The chunked CRC over
+        // warm bytes is (3b). If the fusion works, (1) is close to (2) and
+        // the cold CRC pass of (3) is gone from it.
+        println!(
+            "LOAD_stream name={name} chunked_crc_ms={stream_ms:.3} stream_gbs={:.2} \
+             prod_over_raw_x={:.2}",
+            len as f64 / stream_ms / 1e6,
+            prod_ms / raw_ms
         );
 
         total_prod += prod_ms;
@@ -147,5 +197,11 @@ fn main() {
     println!(
         "LOAD_file_share_pct={share:.2} (the two sections are this share of the file, so a \
          section-scoped read pays for this share and not for 100%)"
+    );
+    println!(
+        "gate_crc_stream_matches_whole={} (chunked CRC on {} sections, {} bad)",
+        if crc_gate_bad == 0 && crc_gate_chunks > 0 { "PASS" } else { "FAIL" },
+        SECTIONS.len(),
+        crc_gate_bad
     );
 }
