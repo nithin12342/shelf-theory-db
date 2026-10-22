@@ -20,9 +20,9 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 | METHOD-060 | The Q2 join, 99.7% of the query | `imdb_fiber_bench.rs` | about 90 lines | **83x to 116x** on Q2 | The md5 cross-engine gate in `imdb_job.json` |
 | METHOD-061 | The redundant tab examinations, 115,797,375 over the basics stage | `imdb_fiber_bench.rs` | about 40 lines | Removes 9 of 18 tab examinations per basics row | The six sections byte for byte |
 | METHOD-062 | The generic parse and the UTF-8 validation, 91.2% to 92.5% of the build | `imdb_fiber_bench.rs` | about 30 lines | A hypothesis. The measurement task is named in section 3. | The six sections byte for byte |
-| METHOD-063 | The serial parse, 96.5% to 98.5% of the build | `imdb_fiber_bench.rs` | about 120 lines | **4.00x**, 112,721 ms to 28,180 ms | The six sections, plus the three query gates |
+| METHOD-063 | The serial parse, 96.5% to 98.5% of the build | `imdb_fiber_bench.rs` | about 120 lines | **1.85x to 2.09x**, 112,721 ms to 54,100 to 61,100 ms, and the 4.00x projection is retracted | The nine sections, plus the three query gates |
 | METHOD-064 | The CRC second pass, 23.7% to 32.7% of the load | `imdb_fiber.rs` | about 20 lines | **1.31x to 1.48x** on the load | The CRC corruption negative test |
-| METHOD-065 | The unverified DuckDB setup number | a new job runner | about 200 lines | No performance gain. It settles the 511x gap. | The recorded number must be at or above the physical floor |
+| METHOD-065 | The unverified DuckDB setup number | a new job runner | 286 lines | No performance gain. It settles the 511x gap, and the gap does not exist: the DuckDB setup measures 155,991 ms. | The record states the input size, the disk rate and the row count of every table |
 | METHOD-066 | The latency fixes aimed at the wrong place | `imdb_fiber_bench.rs` | about 40 lines | A hypothesis. The build has no dependency chain. | The six sections |
 
 **The order is a dependency, not a preference.** Section 5 shows why.
@@ -129,14 +129,14 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 | What it does | Each of the four build stages parses one TSV file in a single-threaded byte loop. Each stage is split into 4 byte ranges and each range is parsed by one thread. The ranges start and end on a line boundary. |
 | Files | `crates/sheaf-engine/src/bin/imdb_fiber_bench.rs`, the `build` function |
 | Size | about 30 lines per stage, or about 120 lines if one helper serves all four |
-| The measured stages | names 11,440 ms, ratings 548 ms, basics 11,168 ms, principals 89,565 ms, total 112,721 ms |
-| The source files | 927.5 + 28.7 + 1,065.6 + 4,362.0 = 6,383.8 MB |
-| The read share of the build | At the measured 1.61 to 3.89 GB/s the read costs 1,641 ms to 3,965 ms, which is 1.5% to 3.5% of the build. The parse is 96.5% to 98.5%. |
-| The measured gain | 112,721 ms to 28,180 ms, a 4.00x cut. The scaling is near linear because the read is a small share. |
+| The measured stages, before the change | names 11,440 ms, ratings 548 ms, basics 11,168 ms, principals 89,565 ms, total 112,721 ms |
+| The source files | 927.5 + 28.7 + 1,065.6 + 4,362.0 = 6,383.8 MiB |
+| The read share of the build | MEASURED 2026-10-22: the principals stage reads 4.36 GB in 58,958 to 69,215 ms, which is 68% to 83% of the stage. The parse is 17% to 32%. The plan's read share of 1.5% to 3.5% was measured on cached files and does not hold on a cold read. |
+| The measured gain | 112,721 ms to 54,100 to 61,100 ms, a 1.85x to 2.09x cut. The 4.00x projection is retracted because the read, not the parse, is the larger share. With the source cold the same build takes 114,200 ms, so the gain is 0.99x and the build is bound by the disk. |
 | The merge cost | The names stage builds an id-to-index map and a running index counter. Each thread returns its own records and its own count, and the merge assigns the global indices. The ratings stage has no cross-row state. The principals stage returns a partial count map and a partial edge list, and the merge concatenates the edge lists and sums the count maps. |
 | The core count | The host has 4 physical cores. The 8-thread bandwidth ceiling is 1.13x over 4 threads, and the parse is CPU-bound, so 4 threads on 4 cores is the right target. |
-| Gate | The six sections are byte for byte the same, and the three query gates still pass exactly |
-| Evidence the node produces | The build at 28,180 ms against 112,721 ms, and the per-stage times |
+| Gate | The nine sections are byte for byte the same, and the three query gates still pass exactly |
+| Evidence the node produces | The build at 54,100 to 61,100 ms against 112,721 ms, the per-stage times, and the read, parse, merge and sort split of the principals stage |
 
 ### 3.6 METHOD-064, the fused CRC verify
 
@@ -161,9 +161,9 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 
 | Element | Detail |
 |---|---|
-| Problem | The committed DuckDB setup is 0.1 s. Reading 6,383.8 MB from the NVMe at the measured 3.20 GB/s costs 1,995 ms, so 0.1 s cannot be a parse of the data. Parsing 72,779,864 rows in 0.1 s is 728 million rows per second, which is 16 cycles per row on 4 cores. |
+| Problem | The committed DuckDB setup is 0.1 s. Reading the 10,407,973,490 B input at the measured 3.20 GB/s costs 3,252 ms, so 0.1 s cannot be a read of the data. Parsing 72,779,864 rows in 0.1 s is 728 million rows per second, which is 16 cycles per row on 4 cores. MEASURED 2026-10-22: the setup is 155,991 ms, so the record is 1,560x too low. |
 | What the repository holds | `results/imdb_job.json` holds the number. It holds no script that shows how the number was produced. |
-| What the number does | It is the largest single figure in the total-time table, and it produces the 511x setup gap against the shelf build. |
+| What the number does | It is the largest single figure in the total-time table, and it produces the claimed 511x setup gap against the shelf build. The measurement removes that gap and reverses it: DuckDB is slower than the shelf on setup. |
 | The fix | Write the job runner that the repository does not have. It loads the 7 TSV files into DuckDB, records the time, and records the input format. It does the same for PostgreSQL so the two setups are measured the same way. |
 | Files | a new runner under `sheaf-db/tests/e2e/realtime_bench/`, and the results file |
 | Size | about 200 lines |
@@ -197,16 +197,16 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 
 | Artifact | Now (ms) | After (ms) | Gain | Nodes |
 |---|---|---|---|---|
-| The IMDb bundle, 4 TSV files parsed | 112,721 | 28,180 | 4.00x | METHOD-063 |
-| The Q1 answer fiber section | not built | 70 to 90 | new | METHOD-059 |
-| The Q2 per-name aggregate | not built | 18,333 plus 16 | new | METHOD-060 |
-| The Q2 top-10 section, pre-sorted | not built | 16 | new | METHOD-060 |
-| The Q3 decade groups | not built | under 1 | new | METHOD-060 |
-| The whole bundle with all three pre-aggregates | 112,721 | **46,529** | **2.42x** | METHOD-059, METHOD-060, METHOD-063 |
-| The bundle with the text handling 2x faster | 112,721 | 34,943 | 3.23x | METHOD-061, METHOD-062 |
-| The bundle with the text handling 2x faster and 4 threads | 112,721 | **15,217 plus 18,333 = 33,550** | 3.36x | METHOD-061, METHOD-062, METHOD-063 |
+| The IMDb bundle, 4 TSV files parsed | 112,721 | 54,100 to 61,100 | 1.85x to 2.09x | METHOD-063 |
+| The Q1 answer fiber section | not built | 64 to 139 | new | METHOD-059 |
+| The Q2 per-name aggregate | not built | 1,323 to 2,447 | new | METHOD-060 |
+| The Q2 top-10 section, pre-sorted | not built | under 1 | new | METHOD-060 |
+| The Q3 decade groups | not built | 98 to 225 | new | METHOD-060 |
+| The whole bundle with all three pre-aggregates | 112,721 | **55,829 to 64,588** | **1.74x to 2.02x** | METHOD-059, METHOD-060, METHOD-063 |
 
-**The 33,550 ms figure is a derived number.** It assumes the text handling becomes 2x faster, which is the hypothesis of METHOD-061 and METHOD-062. The measured figure is 46,529 ms, which needs only METHOD-059, METHOD-060 and METHOD-063.
+**The combined figure is derived, and every part of it is measured.** The build without the answers measures 54,100 to 61,100 ms. The answer build measures 1,729 to 3,488 ms. The sum is 55,829 to 64,588 ms. In one cold run the whole bundle took 114,200 ms.
+
+**Two projections are retracted by the measurements of 2026-10-22.** The rows that assumed the text handling becomes 2x faster are removed. METHOD-061 and METHOD-062 replaced the text handling and measured 3.94x to 4.08x on the parse, and that gain is already inside the 54,100 to 61,100 ms figure. The 28,180 ms projection for the 4-thread parse is retracted for the same reason as the 4.00x above: the read of the source file is 68% to 83% of the stage and 4 threads cannot divide it.
 
 ### Table 2: The build the operating system must do
 
@@ -214,12 +214,12 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 
 | Step | Requirement |
 |---|---|
-| The source data | 6,383.8 MB of TSV in `D:\d2\data\imdb`, already present |
-| The output bundle | 1,691 MB, written to `D:\bench\data\imdb_fiber_bundle.bin` |
+| The source data | 6,383.8 MiB of TSV in the 4 files the build reads, in `D:\d2\data\imdb`, already present |
+| The output bundle | 1,439 MB, written to `D:\bench\data\imdb_fiber_bundle.bin` |
 | The write | The bundle writer already writes to a temporary file and renames it, so a torn write cannot produce a usable bundle |
 | The free disk | 1.7 GB for the bundle plus 1.7 GB for the temporary file during the write |
 | The memory | The build holds the 4,362 MB principals file in memory, plus the 16 GiB of the host. The 4-thread parse needs one copy per thread, so the peak is unchanged. |
-| The time | 46,529 ms measured, 33,550 ms derived |
+| The time | 55,829 to 64,588 ms, derived from two measured parts, and 114,200 ms measured in one cold run |
 | The trigger | The build runs when the bundle is missing or when a section fingerprint does not match its source. The fingerprint logic already exists in the index. |
 
 ---
@@ -233,15 +233,15 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 | METHOD-065 | a correct setup comparison | one script | nothing |
 | METHOD-061 | 9 of 18 tab examinations removed from the basics stage | about 40 lines | nothing |
 | METHOD-062 | the generic parse and the UTF-8 validation removed | about 30 lines | METHOD-061, so the two effects separate |
-| METHOD-063 | the build at 28,180 ms | about 120 lines | METHOD-061 and METHOD-062, so the parse is the only remaining cost |
+| METHOD-063 | the build at 54,100 to 61,100 ms | about 120 lines | METHOD-061 and METHOD-062, so the parse is the only remaining cost |
 | METHOD-064 | the load at 84.1 ms to 105.2 ms | about 20 lines | nothing |
 | METHOD-059 | the Q1 query at 0.058 to 0.093 ms | 70 to 90 ms of build | METHOD-063, or the build gets longer |
-| METHOD-060 | the Q2 query at 0.02 ms, the Q3 at 0.38 ms | 18,349 ms of build | METHOD-063 |
+| METHOD-060 | the Q2 query at 0.005 to 0.021 ms, the Q3 at 0.004 to 0.019 ms | 1,323 to 2,910 ms of build, measured | METHOD-063 |
 | METHOD-066 | a measured answer on the build | about 40 lines | METHOD-063 |
 
-**The dependency that matters.** The pre-aggregate joins add 18,349 ms to the build. With METHOD-063 the build is 28,180 ms and the joins make it 46,529 ms, which is 2.42x better than today. Without METHOD-063 the build is 131,070 ms, which is worse than today. **METHOD-063 must land before METHOD-059 and METHOD-060 are worth anything at scale.**
+**The dependency that matters, with the measured cost.** The pre-aggregates add 1,729 to 3,488 ms to the build, not the projected 18,349 ms, because the Q2 aggregate uses dense arrays and a title bitmap. With METHOD-063 the build is 54,100 to 61,100 ms and the pre-aggregates make it 55,829 to 64,588 ms, which is 1.74x to 2.02x better than today. Without METHOD-063 the build is 131,070 ms, which is worse than today. **METHOD-063 must land before METHOD-059 and METHOD-060 are worth anything at scale.**
 
-**The break-even.** The build with METHOD-059, METHOD-060 and METHOD-063 costs 46,529 ms against the current 112,721 ms, so the build alone already pays for itself. The suite query falls from 21,180.2 ms to 165.1 ms to 229.2 ms. The change wins from the first suite run.
+**The break-even.** The build with METHOD-059, METHOD-060 and METHOD-063 costs 55,829 to 64,588 ms against the current 112,721 ms, so the build alone already pays for itself. The suite query falls from 21,180.2 ms to 0.027 to 0.093 ms, measured. The change wins from the first suite run.
 
 **METHOD-065 comes first because it changes a published number.** The total-time table cannot carry an unexplained figure in its largest row.
 
@@ -255,14 +255,16 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 
 | Query | Current (ms) | After (ms) | Gain |
 |---|---|---|---|
-| Q1, filter plus aggregate | 348.9 | 0.35 to 0.38 | **903x to 994x** |
-| Q2, 4-table top-10 | 18,988.2 | 0.02 with the pre-sorted section, 164.3 to 228.4 with the full aggregate | **83x to 116x**, or about 950,000x |
-| Q3, 4-table decade rollup | 1,842.2 | 0.38 | **4,767x** |
-| **The suite wall** | **21,180.2** | **165.1 to 229.2**, or 0.75 with the pre-sorted Q2 | **92x to 128x**, or 28,000x |
-| The build, paid once | 112,721 | 46,529 | 2.42x |
-| The build plus one suite run | 133,901 | 46,787 | 2.86x |
-| The build plus 4 suite runs | 197,442 | 47,280 | 4.18x |
-| The build plus 100 suite runs | 2,230,741 | 63,052 | 35x |
+| Q1, filter plus aggregate | 348.9 | 0.018 to 0.053 | **6,583x to 19,383x** |
+| Q2, 4-table top-10 | 18,988.2 | 0.005 to 0.021 | **904,200x to 3,797,640x** |
+| Q3, 4-table decade rollup | 1,842.2 | 0.004 to 0.019 | **96,958x to 460,550x** |
+| **The suite wall** | **21,180.2** | **0.027 to 0.093** | **227,744x to 784,452x** |
+| The build, paid once | 112,721 | 55,829 to 64,588 | 1.74x to 2.02x |
+| The build plus one suite run | 133,901 | 55,994 to 64,817 | 2.07x to 2.39x |
+| The build plus 4 suite runs | 197,442 | 56,489 to 65,505 | 3.01x to 3.50x |
+| The build plus 100 suite runs | 2,230,741 | 72,339 to 87,508 | 25.5x to 30.8x |
+
+**Every after value in this table is measured, and the source is `results/imdb_shelf.json`.** The query times come from two runs of `imdb_fiber_bench` on 2026-10-22, one with the source cold and one with the bundle fresh. The build range is the derived sum of the build without the answers and the answer build. The projection that the suite wall becomes 165.1 to 229.2 ms assumed a scan for Q2 and Q3. All three answers are materialized sections, so the wall is 0.027 to 0.093 ms.
 
 ### Table 4: The TPC-H suite
 
@@ -281,16 +283,16 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 
 | Architecture | Query margin now | Query margin after | Setup margin now |
 |---|---|---|---|
-| DuckDB | 1.75x faster | 894x faster | 511x to 1,127x slower, and unverified until METHOD-065 |
+| DuckDB | 1.75x faster | 894x faster | 2.55x to 2.88x faster, measured 2026-10-22, and 1.37x faster with the source cold |
 | Redis | 1.29x faster | 639x faster | 12.3x to 27.2x slower |
 | ScyllaDB | 1.05x faster | 521x faster | 2.39x to 5.28x slower |
 | ScyllaDB (CQL) | 1.37x faster | 678x faster | 1.1x to 2.1x faster |
 | SQLite | 3.83x faster | 1,894x faster | 6.5x to 14.3x slower |
 | MariaDB | 4.91x faster | 2,427x faster | 1.9x to 4.2x slower |
 | Neo4j | 5.51x faster | 2,724x faster | 1.64x faster |
-| PostgreSQL | 9.70x faster | 4,795x faster | 1.11x to 2.44x slower |
+| PostgreSQL | 9.70x faster | 4,795x faster | 783,103 ms measured, which is 12.8x to 14.5x slower, and the run held the disk at 48.0 to 56.2 MB/s, so the figure is not comparable |
 
-**The setup margins move with METHOD-063.** The shelf build goes from 51,100 ms to 112,721 ms down to 28,180 ms, so every setup margin improves by 1.81x to 4.00x.
+**The setup margins move with METHOD-063, by the measured amount.** The shelf build goes from 112,721 ms to 54,100 to 61,100 ms, so every setup margin improves by 1.85x to 2.09x, and not by the projected 4.00x. With the source cold the build takes 114,200 ms and no setup margin improves.
 
 ---
 
@@ -298,7 +300,7 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 
 - **The 2x text-handling factor in table 1 is a hypothesis.** METHOD-061 and METHOD-062 must measure it. The table shows the consequence if it holds.
 - **The gains are measurements of the change in isolation.** The measurements come from benches that reproduce the change, and the merged code can differ.
-- **The 511x setup gap against DuckDB is an upper bound until METHOD-065 runs.**
+- **The 511x setup gap against DuckDB is retracted.** METHOD-065 measured the DuckDB setup at 155,991 ms and the shelf build at 54,100 to 61,100 ms, so the shelf is 2.55x to 2.88x faster on setup. The recorded 0.1 s put the gap in the other direction, and the record is 1,560x below the measurement.
 - **The Q1 and Q2 query times have a 2.2x spread** across four committed runs of the same binary and the same bundle. Every figure is a range.
 - **The plan does not touch the storage engine, the kernel, the compiler or the query language.** Every node is in the bench and bundle path.
 - **No code was changed for this plan.** The plan is a document.
@@ -327,3 +329,33 @@ Rows = the node. Columns = the waste it removes, the file, the size, the gain, a
 | The build source file sizes | `D:\d2\data\imdb`, 927.5 + 28.7 + 1,065.6 + 4,362.0 MB |
 
 **Plan generated:** 2026-10-22 13:01:38 local (Asia/Kolkata), 2026-10-22 07:31:38 UTC.
+
+---
+
+## 9. Measured corrections, 2026-10-22
+
+All eight nodes are built. The measurements contradict nine figures in this plan. Each row below names the projection, the measured value, and the record that holds the measurement.
+
+### Table 6: Every retracted figure and the measurement that replaces it
+
+**Rows = the figure. Columns = the projected value, the measured value, and the source of the measurement.**
+
+| The figure | Projected | Measured | Source |
+|---|---|---|---|
+| The build after 4 threads | 28,180 ms, a 4.00x | 54,100 to 61,100 ms, a 1.85x to 2.09x | `imdb_fiber_bench` stdout, two builds, METHOD-063 |
+| The read share of the principals stage | 1.5% to 3.5% | 68% to 83% | the `build principals split` line, read 58,958 ms of 86,510 and 62,696 of 79,186 |
+| The cost of the three pre-aggregates | 18,349 ms | 1,729 to 3,488 ms | the `build answers` line, METHOD-059 and METHOD-060 |
+| The whole bundle build | 46,529 ms, a 2.42x | 55,829 to 64,588 ms, a 1.74x to 2.02x, and 114,200 ms with the source cold | the two measured parts, summed |
+| The suite wall | 165.1 to 229.2 ms | 0.027 to 0.093 ms | `results/imdb_shelf.json`, two runs |
+| The DuckDB setup | 0.1 s | 155,991 ms | `results/imdb_setup.json` |
+| The DuckDB setup margin | 511x to 1,127x slower for the shelf | 2.55x to 2.88x faster for the shelf | both records above |
+| The floor for the DuckDB read | 6,383.8 MB and 1,995 ms | 10,407,973,490 B and 3,252 ms | the size of the 7 TSV files |
+| The PostgreSQL setup | 46.2 s | 783,103 ms, measured while the disk held 48.0 to 56.2 MB/s, so the figure is not comparable | `results/imdb_setup.json` |
+
+**The first cause of the four build corrections is the read.** The plan put 4 threads on the parse because it measured the read at 1.5% to 3.5% of the build. That measurement came from cached files. On a cold read the principals file takes 58,958 to 69,215 ms, which is 68% to 83% of the stage. Threads cannot divide a read of one file on one disk, so the parse threads reach their 3.94x to 4.08x and the stage still gains only 1.85x to 2.09x.
+
+**The second cause is the answer design.** The plan costed the pre-aggregates at 18,349 ms, from a hash-probe join. The built design uses dense arrays and a title bitmap, and costs 1,729 to 3,488 ms. The suite wall follows from the same design: all three answers are materialized sections, so each query moves 24 to 226 B.
+
+**The third cause is the DuckDB record.** The 0.1 s figure was never possible. The read alone is 3,252 ms at the plan's own 3.20 GB/s, which is 32.5x the record, and the measurement is 155,991 ms, which is 1,560x the record. The 511x margin that rested on it is retired with it.
+
+**The box was loaded during the PostgreSQL run.** The total disk throughput sampled 48.0 and 56.2 MB/s, against the planned 3.20 GB/s. The PostgreSQL figure therefore measures the disk and not the engine. The record states this condition and the figure does not replace a measurement made on a quiet disk.
