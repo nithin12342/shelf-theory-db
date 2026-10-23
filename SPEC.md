@@ -65,8 +65,11 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-059 | No host path in executable code or bench scripts; every root comes from a flag or the per-machine bench config | Portability 2026-10-23 | SPEC-059 |
 | REQ-060 | Complex Join Order Benchmark query Q4 (multi-attribute filter, 5-table join stress, aggregation) | Complex-JOB 2026-10-23 | SPEC-060 |
 | REQ-061 | TQL statistical cost optimizer (cardinality statistics, predicate selectivity, cost modeling) | TQL-Cost-Opt 2026-10-23 | SPEC-061 |
+| REQ-062 | TQL optimizer evaluation across the seven database benchmark query shapes | TQL-Seven-DB 2026-10-23 | SPEC-062 |
 
 ## SPEC details (acceptance = gate)
+
+- SPEC-062: four representative query shapes (IMDb JOB join, Fraud net 2-hop graph traversal, TPC-H analytical filter, Key-Value point lookup) must be expressed as valid TQL cellular subcomplex queries; the statistical cost optimizer must achieve > 1.5x efficiency gain over unoptimized execution for every query shape. Gate: tql_seven_db_bench prints TQL-SEVEN-DB-BENCH: ALL PASS; wc -l <= 500 across all files.
 
 - SPEC-061: the TQL optimizer must compute statistical costs for scan, filter, join, and solve operators; predicate selectivity must follow distinct value distributions and comparison types; EXPLAIN output must render total cost and per-operator breakdowns alongside poset boundary pruning. Gate: unit tests in sheaf-query pass; gate_statistical_optimizer=PASS in phase5_bench; wc -l <= 500 across all files.
 
