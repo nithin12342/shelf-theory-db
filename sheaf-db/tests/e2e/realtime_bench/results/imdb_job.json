@@ -85,6 +85,13 @@
         ]
       ],
       "expected_rows_compact": "1950,3464,7.5921189376;1960,4519,7.5777384377;1970,5769,7.2996706535;1980,9048,7.1099580018;1990,20278,6.9740753526;2000,40961,7.0987500305;2010,76368,7.2127212969;2020,46974,7.0740111551"
+    },
+    "q4": {
+      "rows": 10,
+      "md5": "d83e1a931abed7bdfa5595b6889baa0f",
+      "duckdb_ms": 1058.3,
+      "description": "JOB-style 4-table join (basics + ratings + principals + names)",
+      "expected_rows_compact": "Mark Ruffalo,13;Scarlett Johansson,12;Aamir Khan,10;Robert Downey Jr.,10;Leonardo DiCaprio,9;Tom Hanks,9;Matt Damon,9;Brad Pitt,9;Chris Evans,9;Willem Dafoe,9"
     }
   },
   "gate_cross_engine": "PASS",

@@ -144,5 +144,22 @@
       "gate": "PASS",
       "gate_detail": "pairs 173716 == 173716"
     }
+  },
+  "run_20261023_1551": {
+    "sqlite": true,
+    "duckdb_q1_ms": 345.7,
+    "pg_q1_ms": 1918.1,
+    "shelfdb_q1_ms": 0.0
+  },
+  "run_20261023_1551_detail": {
+    "sqlite": {
+      "count": 44906,
+      "votes": 294435444,
+      "avg": 8.145506168440741,
+      "ms": 652.2594000016397,
+      "load_s": 6.578676600001927,
+      "gate": "PASS",
+      "gate_detail": "count 44906==44906:True votes 294435444==294435444:True avg rel 7.63e-15"
+    }
   }
 }

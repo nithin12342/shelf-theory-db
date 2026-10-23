@@ -38,6 +38,8 @@ mod imdb_fiber;
 mod imdb_build;
 #[path = "shared/bench_args.rs"]
 mod bench_args;
+#[path = "shared/imdb_q4.rs"]
+mod imdb_q4;
 use imdb_build::imdb_answers::{read_answer_q1, read_answer_q2, read_answer_q3, AnswerShape};
 use imdb_build::{BuildPlan, SectionSink, SectionSource};
 use imdb_fiber::{basics_flags, basics_id, basics_year, names_id, names_year, pc_id, pc_n,
@@ -279,11 +281,11 @@ fn main() {
     let t0 = Instant::now();
     let top = read_answer_q2(&a2b);
     let q2_ms = t0.elapsed().as_secs_f64() * 1e3;
-    println!(
-        "q2: load_ms={load_q2:.3} query_ms={q2_ms:.4} bytes={} top={:?}",
-        a2b.len(),
-        top
-    );
+    println!("q2: load_ms={load_q2:.3} query_ms={q2_ms:.4} bytes={} top={:?}", a2b.len(), top);
+    // ---------- Q4: JOB complex query ----------
+    let (top4, load_q4, q4_ms) = imdb_q4::run_q4(&mut br).expect("q4 run");
+    let top4_pairs: Vec<(String, u32)> = top4.iter().map(|r| (r.name.clone(), r.count)).collect();
+    println!("q4: load_ms={load_q4:.3} query_ms={q4_ms:.4} count={} top={:?}", top4.len(), top4_pairs);
 
     // ---------- the oracle: the same three questions, answered by a scan ----------
     // Its cost is reported on its own, so the timed answer path above is
@@ -436,6 +438,10 @@ fn main() {
     println!("q3 total_ms={q3_total:.3} (pre-cache {pre_q3_ms:.0}) speedup={:.0}x", pre_q3_ms / q3_total);
     println!("gate_q1_exact={} (count_ok={c_ok} votes_ok={v_ok} avg_rel={a_rel:.2e})", if c_ok && v_ok && a_rel < 1e-9 { "PASS" } else { "FAIL" });
     println!("gate_q1_fast={} gate_q2_fast={} gate_q3_fast={}", if q1_ok { "PASS" } else { "FAIL" }, if q2_total < pre_q2_ms / 5.0 { "PASS" } else { "FAIL" }, if q3_ok { "PASS" } else { "FAIL" });
+    let q4_expected = "Mark Ruffalo,13;Scarlett Johansson,12;Aamir Khan,10;Robert Downey Jr.,10;Leonardo DiCaprio,9;Tom Hanks,9;Matt Damon,9;Brad Pitt,9;Chris Evans,9;Willem Dafoe,9";
+    let q4_compact = top4.iter().map(|r| format!("{},{}", r.name, r.count)).collect::<Vec<_>>().join(";");
+    let q4_ok = q4_compact == q4_expected;
+    println!("gate_q4_exact={} (matches_duckdb={q4_ok})", if q4_ok { "PASS" } else { "FAIL" });
 
     // Build the JSON explicitly (a single mega-format! mis-ordered its
     // arguments and produced invalid JSON: "wall_ms": [}).
@@ -464,6 +470,16 @@ fn main() {
     out.push_str(", \"query_ms\": ");
     out.push_str(&format!("{q3_ms:.4}"));
     out.push_str(&format!(", \"decades\": {}, \"weight\": {q3_weight}}}", roll.len()));
+    out.push_str(", \"q4\": {\"load_ms\": ");
+    out.push_str(&format!("{load_q4:.3}"));
+    out.push_str(", \"query_ms\": ");
+    out.push_str(&format!("{q4_ms:.4}"));
+    out.push_str(", \"top10\": [");
+    for (i, r) in top4.iter().enumerate() {
+        if i > 0 { out.push(','); }
+        out.push_str(&format!("[{:?},{},{:.4}]", r.name, r.count, r.avg));
+    }
+    out.push_str("]}");
     out.push_str(&format!(
         ", \"oracle_ms\": {oracle_ms:.0}, \"bundle_open_ms\": {open_ms:.1}, \"wall_ms\": {:.1}}}",
         t_all.elapsed().as_secs_f64() * 1e3

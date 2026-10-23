@@ -58,6 +58,22 @@ QUERIES = {
              JOIN name_basics n ON n.nconst = p.nconst
              WHERE b.genres LIKE '%Drama%' AND r.numvotes>10000 AND b.startyear>=1950
              GROUP BY decade HAVING COUNT(*)>500 ORDER BY decade""",
+    # Q4: 5-table JOB complex query (multi-attribute filters + join order stress)
+    "q4": """SELECT n.primaryname, COUNT(*) AS movie_count, AVG(r.averagerating) AS avg_rating, SUM(r.numvotes) AS total_votes
+             FROM title_basics b
+             JOIN title_ratings r ON r.tconst = b.tconst
+             JOIN title_principals p ON p.tconst = b.tconst
+             JOIN name_basics n ON n.nconst = p.nconst
+             WHERE b.titletype = 'movie'
+               AND b.startyear >= 1980
+               AND r.averagerating >= 7.8
+               AND r.numvotes >= 50000
+               AND p.category IN ('actor', 'actress')
+               AND n.birthyear >= 1950
+             GROUP BY n.primaryname
+             HAVING COUNT(*) >= 5
+             ORDER BY movie_count DESC, avg_rating DESC, n.primaryname ASC
+             LIMIT 10""",
 }
 
 
@@ -166,6 +182,10 @@ def main():
             res["queries"][qn]["expected_rows_compact"] = ";".join(
                 f"{r[0]},{int(r[1])}" for r in drows)
             print(f"q2 expected: {[(r[0], r[1]) for r in drows]}", flush=True)
+        if qn == "q4":
+            res["queries"][qn]["expected_rows_compact"] = ";".join(
+                f"{r[0]},{int(r[1])}" for r in drows)
+            print(f"q4 expected: {[(r[0], r[1]) for r in drows]}", flush=True)
         print(f"{qn}: rows={len(drows)} md5={dh[:12]} duck={dms:.0f}ms pg={pms:.0f}ms", flush=True)
     res["gate_cross_engine"] = "PASS"
     res["dialect_note"] = ("Two silent dialect divergences found by the md5 cross-engine "

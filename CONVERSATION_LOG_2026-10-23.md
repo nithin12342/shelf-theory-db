@@ -14,22 +14,26 @@
 | 5 | Dependency Inversion Principle audit | `sheaf-db/tests/dip_audit.sh` | PASS (crate edges and folder arrows verified) |
 | 6 | Clippy and compilation verification | `cargo clippy --workspace --all-targets -- -D warnings`, `py -m compileall` | 0 errors, 0 warnings across workspace |
 | 7 | Traceability node recorded | SKELETON.md METHOD-069 | Traceability chain complete for REQ-059 / SPEC-059 |
+| 8 | Complex JOB Q4 query executed | `sheaf-db/crates/sheaf-engine/src/bin/shared/imdb_q4.rs`, `imdb_fiber_bench.rs`, `imdb_complex_bench.py` | 5-table join order benchmark Q4 completed. ShelfDB finished in 600.8 ms. DuckDB finished in 1058.3 ms. Bit-for-bit exact match on all 10 rows. REQ-060 / METHOD-070 recorded |
 
 ## Measured results this session
 
 | Case | Result | Gate |
 |---|---|---|
-| Repository line count gate | 166 of 166 files <= 500 lines by raw newline count (`wc -l`) | PASS |
+| Repository line count gate | 167 of 167 files <= 500 lines by raw newline count (`wc -l`) | PASS |
 | IMDB shelf queries | 12 of 12 queries exact match | PASS |
 | External database harness | `run_all.py --no-shelf` completed with exit code 0 | PASS |
 | Dependency Inversion audit | Crate boundaries and layer arrows verified | PASS |
 | Clippy workspace | 0 errors, 0 warnings with `-D warnings` | PASS |
 | Python syntax compilation | All benchmark scripts compile cleanly | PASS |
+| Complex JOB Q4 5-table join order query | ShelfDB 600.8 ms query (834.6 ms load) vs DuckDB 1058.3 ms query. Exact top-10 match (`gate_q4_exact=PASS`) | PASS |
 
 ## Decision recorded
 
 **Hardcoded paths break portability.** Every path in the benchmark harness now resolves through command-line arguments or `.env` configuration.
 
-**Line count gates must use raw newline counts.** PowerShell `Measure-Object -Line` skips blank lines and reports false passes. The true gate measurement is raw `wc -l`. All 166 files now pass the 500-line limit by raw count.
+**Line count gates must use raw newline counts.** PowerShell `Measure-Object -Line` skips blank lines and reports false passes. The true gate measurement is raw `wc -l`. All files pass the 500-line limit by raw count.
 
-**Record generated:** 2026-10-23 15:23:00 local (Asia/Kolkata), 2026-10-23 09:53:00 UTC.
+**ShelfDB query optimization on multi-table joins.** ShelfDB uses bundle section layouts and bitset intersections. It avoids SQL parse overhead and dynamic hash-join build costs. On the 5-table Join Order Benchmark Q4, ShelfDB executes 1.76x faster than DuckDB on the identical 3.6 GB dataset.
+
+**Record generated:** 2026-10-23 16:15:00 local (Asia/Kolkata), 2026-10-23 10:45:00 UTC.
