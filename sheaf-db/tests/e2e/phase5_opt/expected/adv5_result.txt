@@ -1,4 +1,4 @@
-﻿C1_open_boundary_rejected=PASS
+C1_open_boundary_rejected=PASS
 C2_dim_mismatch_rejected=PASS
 C3_non_ortho_rejected=PASS
 C4_n6_prunes_to_1=PASS

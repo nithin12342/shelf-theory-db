@@ -4,7 +4,9 @@
 // METHOD-011: name lookup returns contiguous slice; parity with scan.
 use std::collections::HashMap;
 
-use sheaf_query::ir::optimizer::{explain, prune_plan};
+use sheaf_query::ir::optimizer::{
+    explain, explain_costed, optimize_with_cost, prune_plan, CostModel, HypercellStats,
+};
 use sheaf_query::ir::tir::lower_query;
 use sheaf_query::ir::validator::{check_coboundary_ortho, check_eulerian_delta2, validate_program};
 use sheaf_query::syntax::ast::Stmt;
@@ -94,6 +96,18 @@ fn main() {
         && explain6.contains("PosetJoin");
     println!("gate_optimizer_explain={}", if optimizer_pass { "PASS" } else { "FAIL" });
     println!("{}", explain6);
+
+    let stats = HypercellStats {
+        total_rows: 500,
+        ..Default::default()
+    };
+    let model = CostModel::default();
+    let costed_plan = optimize_with_cost(&ops6, q6.overs.len(), &stats, &model);
+    let costed_explain = explain_costed(&costed_plan);
+    let cost_pass = costed_plan.total_cost > 0.0
+        && costed_plan.scan_cost > 0.0
+        && costed_explain.contains("COST: total=");
+    println!("gate_statistical_optimizer={}", if cost_pass { "PASS" } else { "FAIL" });
 
     // ---- METHOD-011: Name lookup parity ------------------------------------
     let prog = parse_program(&full_program5(

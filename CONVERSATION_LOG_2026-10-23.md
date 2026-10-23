@@ -15,6 +15,8 @@
 | 6 | Clippy and compilation verification | `cargo clippy --workspace --all-targets -- -D warnings`, `py -m compileall` | 0 errors, 0 warnings across workspace |
 | 7 | Traceability node recorded | SKELETON.md METHOD-069 | Traceability chain complete for REQ-059 / SPEC-059 |
 | 8 | Complex JOB Q4 query executed | `sheaf-db/crates/sheaf-engine/src/bin/shared/imdb_q4.rs`, `imdb_fiber_bench.rs`, `imdb_complex_bench.py` | 5-table join order benchmark Q4 completed. ShelfDB finished in 600.8 ms. DuckDB finished in 1058.3 ms. Bit-for-bit exact match on all 10 rows. REQ-060 / METHOD-070 recorded |
+| 9 | Operational plan created for TQL statistical cost optimizer | `TQL_COST_OPTIMIZER_PLAN_2026-10-23.md` | Formal operational plan created for unified TQL statistical optimization, cost formulas, and fiber bridge |
+| 10 | TQL statistical cost model and selectivity engine implemented | `sheaf-query/src/ir/optimizer.rs`, `phase5_bench.rs`, `tests/e2e/phase5_opt/` | Implemented HypercellStats, CostModel, estimate_selectivity, and optimize_with_cost. 4 unit tests in sheaf-query pass. gate_statistical_optimizer passes in phase5_bench. REQ-061 / SPEC-061 and METHOD-071 / METHOD-072 recorded |
 
 ## Measured results this session
 
@@ -27,6 +29,7 @@
 | Clippy workspace | 0 errors, 0 warnings with `-D warnings` | PASS |
 | Python syntax compilation | All benchmark scripts compile cleanly | PASS |
 | Complex JOB Q4 5-table join order query | ShelfDB 600.8 ms query (834.6 ms load) vs DuckDB 1058.3 ms query. Exact top-10 match (`gate_q4_exact=PASS`) | PASS |
+| TQL statistical cost optimizer | 4 unit tests pass in sheaf-query. `gate_statistical_optimizer=PASS` and `PHASE5 E2E: PASS` | PASS |
 
 ## Decision recorded
 
@@ -36,4 +39,6 @@
 
 **ShelfDB query optimization on multi-table joins.** ShelfDB uses bundle section layouts and bitset intersections. It avoids SQL parse overhead and dynamic hash-join build costs. On the 5-table Join Order Benchmark Q4, ShelfDB executes 1.76x faster than DuckDB on the identical 3.6 GB dataset.
 
-**Record generated:** 2026-10-23 16:15:00 local (Asia/Kolkata), 2026-10-23 10:45:00 UTC.
+**Topological Query Language statistical cost optimization.** The TQL optimizer now implements statistical cost modeling and predicate selectivity estimation. It computes scan, filter, join, and solve operation costs. It estimates selectivity for equality, ranges, and boolean logic. It enables unified plan optimization.
+
+**Record generated:** 2026-10-23 16:40:00 local (Asia/Kolkata), 2026-10-23 11:10:00 UTC.

@@ -1,4 +1,4 @@
-﻿gate_eulerian_validator=PASS
+gate_eulerian_validator=PASS
 gate_optimizer_explain=PASS
 EXPLAIN (pruned, 1 slices):
   [0] Scan Payment (est 1 rows)
@@ -7,5 +7,6 @@ EXPLAIN (pruned, 1 slices):
   [3] HarmonicSolve (est 1 rows)
   [4] Yield
 
+gate_statistical_optimizer=PASS
 gate_name_lookup_parity=PASS
 PHASE5 E2E: PASS
