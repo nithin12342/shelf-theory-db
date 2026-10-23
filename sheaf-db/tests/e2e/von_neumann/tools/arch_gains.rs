@@ -17,21 +17,22 @@
 //       parallelism headroom is the build time divided by the core count.
 //
 // STANDALONE TOOL. Compile and run from this directory:
-//   rustc -O arch_gains.rs -o arch_gains.exe && ./arch_gains.exe
+//   rustc -O arch_gains.rs -o arch_gains.exe && ./arch_gains.exe <bundle path>
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::time::Instant;
 
-const BUNDLE: &str = r"D:\bench\data\imdb_fiber_bundle.bin";
 const WHOLE: u64 = 1_439_107_761; // all six sections
 const Q1_SECTIONS: u64 = 167_262_875 + 34_429_540; // basics + ratings
 const CACHE_LINE: u64 = 64;
 
 fn main() {
+    let bundle = std::env::args().nth(1).expect("usage: arch_gains <bundle path>");
+
     // ---- C1: whole-file read vs a range read ----
     let t = Instant::now();
-    let whole = std::fs::read(BUNDLE).expect("bundle");
+    let whole = std::fs::read(&bundle).expect("bundle");
     let whole_ms = t.elapsed().as_secs_f64() * 1e3;
     let whole_bytes = whole.len() as u64;
     std::hint::black_box(&whole);
@@ -44,7 +45,7 @@ fn main() {
     // The index says basics is at offset 453,068,360 and ratings at
     // 418,638,820. A range read of the first 487,497,915 bytes covers both.
     let t = Instant::now();
-    let mut f = File::open(BUNDLE).expect("bundle");
+    let mut f = File::open(&bundle).expect("bundle");
     f.seek(SeekFrom::Start(0)).unwrap();
     let mut buf = vec![0u8; (WHOLE - 400_000_000) as usize];
     let n = f.read(&mut buf).unwrap_or(0);
@@ -61,7 +62,7 @@ fn main() {
 
     // The OS page cache may make the second read cheap. Report both.
     let t = Instant::now();
-    let whole2 = std::fs::read(BUNDLE).expect("bundle");
+    let whole2 = std::fs::read(&bundle).expect("bundle");
     let whole2_ms = t.elapsed().as_secs_f64() * 1e3;
     std::hint::black_box(&whole2);
     println!(

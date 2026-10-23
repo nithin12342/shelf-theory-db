@@ -9,7 +9,14 @@
 // ADV6: fiber prefold breakdown (parse/sort/map/build shares).
 use std::time::Instant;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let d_probe = bench_args::required_path(&args, "--d-probe");
+    let lineitem = bench_args::required_path(&args, "--lineitem");
+
     // ---- ADV1: bandwidth vs size ----
     for mb in [16usize, 48, 256, 1024] {
         let n = mb << 20;
@@ -28,7 +35,7 @@ fn main() {
     // ---- ADV2: fsync C: vs D: ----
     for (name, dir) in [
         ("C", std::env::temp_dir()),
-        ("D", std::path::PathBuf::from(r"D:\bench\data\fsync_probe")),
+        ("D", std::path::PathBuf::from(&d_probe)),
     ] {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("probe.dat");
@@ -130,7 +137,7 @@ fn main() {
 
     // ---- ADV6: prefold breakdown (parse/sort/map shares of join prefold) ----
     {
-        let content = std::fs::read(r"D:\bench\build\tpch-dbgen\lineitem.tbl").unwrap();
+        let content = std::fs::read(&lineitem).unwrap();
         let t0 = Instant::now();
         let mut runs: Vec<(u64, f64)> = Vec::with_capacity(6_100_000);
         let mut start = 0usize;

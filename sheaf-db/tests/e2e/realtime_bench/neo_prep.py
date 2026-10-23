@@ -1,8 +1,10 @@
 """One-shot: TPC-H SF1 -> Neo4j bulk-import CSVs (subset columns for speed)."""
 import os
 
-SRC = r"D:\bench\build\tpch-dbgen"
-DST = r"D:\bench\data\neo4j\import"
+import bench_paths as P
+
+SRC = P.build("tpch-dbgen")
+DST = P.data("neo4j", "import")
 os.makedirs(DST, exist_ok=True)
 
 with open(f"{SRC}\\customer.tbl", encoding="utf-8") as f, \

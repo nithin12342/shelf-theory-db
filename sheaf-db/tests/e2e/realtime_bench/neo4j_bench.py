@@ -8,7 +8,9 @@ import time
 
 from neo4j import GraphDatabase
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\neo4j.json"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "neo4j.json")
 SEED = 42
 
 

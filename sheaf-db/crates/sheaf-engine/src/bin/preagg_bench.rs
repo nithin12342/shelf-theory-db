@@ -8,13 +8,18 @@ use std::time::Instant;
 
 use sheaf_storage::lsp::preagg::PreAgg;
 
-const DIR: &str = r"D:\bench\build\tpch-dbgen";
 const EXPECTED_TOTAL: f64 = 93574920897.0;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let dir = bench_args::required_path(&args, "--dir");
+
     // ---- Load (untimed, reported): seg map + order->seg map ----
     let t0 = Instant::now();
-    let content = std::fs::read(format!("{DIR}\\customer.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\customer.tbl")).unwrap();
     let mut seg_of: HashMap<u64, u8> = HashMap::with_capacity(160_000);
     let mut start = 0usize;
     for i in 0..content.len() {
@@ -51,7 +56,7 @@ fn main() {
             seg_of.insert(id, seg);
         }
     }
-    let content = std::fs::read(format!("{DIR}\\orders.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\orders.tbl")).unwrap();
     let mut order_seg: HashMap<u64, u8> = HashMap::with_capacity(1_600_000);
     let mut start = 0usize;
     for i in 0..content.len() {
@@ -79,7 +84,7 @@ fn main() {
     println!("preagg_load: {:.1}s (order->seg entries={})", t0.elapsed().as_secs_f64(), order_seg.len());
 
     // ---- Gate: timed ingest (probe + O(1) accumulate per row) ----
-    let content = std::fs::read(format!("{DIR}\\lineitem.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\lineitem.tbl")).unwrap();
     let mut agg = PreAgg::new();
     let t0 = Instant::now();
     let mut start = 0usize;

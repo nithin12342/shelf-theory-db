@@ -24,7 +24,6 @@ const N_READERS: usize = 8;
 const R_ITERS: usize = 1_000_000;
 // Snapshot refresh cadence (P3): every 1M lookups. Frequent enough to track
 // merged state, rare enough to stay out of the measurement.
-
 fn xorshift(state: &mut u64) -> u64 {
     let mut x = *state;
     x ^= x << 13;
@@ -33,12 +32,10 @@ fn xorshift(state: &mut u64) -> u64 {
     *state = x;
     x
 }
-
 fn p99(mut v: Vec<u64>) -> u64 {
     v.sort_unstable();
     v[v.len() * 99 / 100]
 }
-
 /// One reader phase: fixed lookups per thread, batch-of-64 timing for P99.
 fn reader_phase(snap: &Snapshot, iters: usize, seed: u64) -> (f64, u64, usize) {
     let mut st = seed;
@@ -63,7 +60,6 @@ fn reader_phase(snap: &Snapshot, iters: usize, seed: u64) -> (f64, u64, usize) {
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     (iters as f64 / ms * 1000.0, p99(samples), acc)
 }
-
 fn main() {
     // ---- Base: 200k live 0-cells -------------------------------------
     let t0 = Instant::now();
@@ -77,14 +73,12 @@ fn main() {
     }
     let base = Arc::new(b.finish());
     println!("base_build_ms={}", t0.elapsed().as_millis());
-
     let wal_path = std::env::temp_dir().join(format!("sheaf_phase2_{}.wal", std::process::id()));
     let _ = std::fs::remove_file(&wal_path);
     let mem = Arc::new(MemComplex::new(base, N_SHARDS, &wal_path).unwrap());
     let mgr = Arc::new(TxnManager::new(mem.clone(), 1024));
     let (comp, comp_handle) = Compactor::spawn(mem.clone());
     let recorded: Arc<Mutex<Vec<[u64; 4]>>> = Arc::new(Mutex::new(Vec::new()));
-
     // ---- P1: readers-only baseline ------------------------------------
     let snap0 = Arc::new(mem.snapshot());
     let t0 = Instant::now();
@@ -102,7 +96,6 @@ fn main() {
     });
     println!("p1_reader_thr_ops={:.0}", base_thr);
     println!("p1_wall_ms={}", t0.elapsed().as_millis());
-
     // ---- P2: writers + readers -----------------------------------------
     let t0 = Instant::now();
     let (mut wlat, mut cont_thr) = (Vec::new(), 0.0);
@@ -163,7 +156,6 @@ fn main() {
     println!("p2_sealop_p99_ns={}", seal_p99);
     println!("p2_reader_thr_ops={:.0}", cont_thr);
     println!("p2_wall_ms={}", t0.elapsed().as_millis());
-
     // ---- P3a: wave-2 writers run to completion (more merge material) -----
     let t0 = Instant::now();
     let mut wlat2 = Vec::new();    std::thread::scope(|s| {
@@ -197,7 +189,6 @@ fn main() {
     });
     println!("p3_wave2_write_p99_ns={}", p99(wlat2));
     println!("p3a_wall_ms={}", t0.elapsed().as_millis());
-
     // ---- F4-peak: footprint at maximum mem residency (pre-merge peak,
     // not post-merge residual): all wave1+wave2 sealed, nothing drained.
     {
@@ -206,7 +197,6 @@ fn main() {
         let est = refs * 32 + faces * 48 + live_bits + wal_len as usize;
         println!("mem_footprint_peak star_faces={} star_refs={} live_bits={} wal_bytes={} estimate_bytes={}", faces, refs, live_bits, wal_len, est);
     }
-
     // ---- P3b: readers-only overlapped with the merge ----------------------
     // Isolation rationale: mixing writers into the merge window conflated
     // writer stalls with read slowdown (previous runs collapsed 600x and

@@ -7,13 +7,18 @@ use std::time::Instant;
 
 use sheaf_kernel::simd::mt_scan::partitioned_sum;
 
-const LINEITEM: &str = r"D:\bench\build\tpch-dbgen\lineitem.tbl";
 const EXPECTED_ROWS: usize = 6_001_215;
 const EXPECTED_SUM: f64 = 218102223881.86;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let lineitem = bench_args::required_path(&args, "--lineitem");
+
     let t0 = Instant::now();
-    let content = std::fs::read(LINEITEM).expect("lineitem.tbl missing");
+    let content = std::fs::read(&lineitem).expect("lineitem.tbl missing");
     let mut price: Vec<f32> = Vec::with_capacity(EXPECTED_ROWS);
     let mut disc: Vec<f32> = Vec::with_capacity(EXPECTED_ROWS);
     let mut start = 0usize;

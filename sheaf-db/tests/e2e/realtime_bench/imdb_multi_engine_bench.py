@@ -22,6 +22,8 @@ import os
 import time
 from decimal import Decimal
 
+import bench_paths as P
+
 
 def _json_default(o):
     """MariaDB returns Decimal for SUM(); JSON needs numbers."""
@@ -29,11 +31,11 @@ def _json_default(o):
         return int(o) if o == o.to_integral_value() else float(o)
     raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
 
-IMDB = r"D:\d2\data\imdb"
-RES = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results"
+IMDB = P.imdb()
+RES = str(P.RESULTS)
 OUT = os.path.join(RES, "imdb_multi_engine.json")
 BASE = os.path.join(RES, "imdb_job.json")
-DDB = r"D:\bench\data\duckdb\imdb.duckdb"
+DDB = P.data("duckdb", "imdb.duckdb")
 MARIADB = {"host": "127.0.0.1", "port": 3307, "user": "root", "password": "benchpass",
            "database": "imdb"}
 MONGO = "127.0.0.1:27017"
@@ -90,7 +92,7 @@ def load_truth_sets():
 # ---------------------------------------------------------------- sqlite
 def run_sqlite(titles, rat, joined, t):
     import sqlite3
-    db = r"D:\bench\data\sqlite\imdb.db"
+    db = P.data("sqlite", "imdb.db")
     if os.path.exists(db):
         os.remove(db)
     con = sqlite3.connect(db)

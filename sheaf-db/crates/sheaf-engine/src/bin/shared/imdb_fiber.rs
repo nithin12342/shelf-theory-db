@@ -19,20 +19,15 @@
 // Each bench binary includes this module separately, so a helper used by
 // one bench is dead code in another.
 #![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::io::{Seek, SeekFrom, Write};
-
 use sheaf_storage::lsp::ring_wal::{crc_hw, crc_state_finish, crc_state_init, crc_state_update};
-
 pub const MAGIC: u64 = 0x494D_4442_4649_424C; // "IMDBFIBL"
 pub const FMT_VER: u32 = 3;
 pub const HEADER_LEN: usize = 24;
-
 /// The chunk a section load reads before it folds the CRC. 4 MiB keeps
 /// the chunk in the last level cache, so the verify runs hot.
 pub const CRC_CHUNK: usize = 4 << 20;
-
 /// The smallest section that pays for the pipelined verify.
 ///
 /// Measured 2026-10-22 on this host, same run, same box. On the 167 MB
@@ -42,7 +37,6 @@ pub const CRC_CHUNK: usize = 4 << 20;
 /// time, which is more than the 5 ms of CRC it hides. Below this size the
 /// serial form is measured better, so the serial form is used.
 pub const PIPELINE_MIN_BYTES: usize = 64 << 20;
-
 /// A pointer that may cross a thread boundary.
 ///
 /// The reader thread writes disjoint chunk ranges of one buffer and this
@@ -53,7 +47,6 @@ struct SendPtr(*mut u8);
 // thread and the reads of the ranges after their transfer, which the
 // channel orders. No two threads touch one byte at the same time.
 unsafe impl Send for SendPtr {}
-
 impl SendPtr {
     /// The raw pointer. A method call captures the whole wrapper, so the
     /// closure takes the Send type and not the bare pointer.
@@ -61,7 +54,6 @@ impl SendPtr {
         self.0
     }
 }
-
 /// One section's bytes + where it lives in the file.
 #[derive(Clone)]
 pub struct SectionMeta {
@@ -73,7 +65,6 @@ pub struct SectionMeta {
     /// produced this section). Unchanged sections keep their generation.
     pub gen: u64,
 }
-
 /// Writer: appends section payloads to a temp file, then writes
 /// header + index + payload to the final file.
 pub struct BundleWriter {
@@ -82,19 +73,16 @@ pub struct BundleWriter {
     offset: u64,
     metas: Vec<SectionMeta>,
 }
-
 impl BundleWriter {
     pub fn create(path: &str) -> std::io::Result<Self> {
         let tmp_path = format!("{path}.payload");
         let file = std::fs::File::create(&tmp_path)?;
         Ok(Self { payload: file, path: path.to_string(), offset: 0, metas: Vec::new() })
     }
-
     /// Append one section (generation 0).
     pub fn write_section(&mut self, name: &str, data: &[u8]) -> std::io::Result<()> {
         self.write_section_gen(name, data, 0)
     }
-
     /// Append one section with its GENERATION (B12).
     pub fn write_section_gen(&mut self, name: &str, data: &[u8], gen: u64) -> std::io::Result<()> {
         let crc = crc_hw(data);
@@ -109,7 +97,6 @@ impl BundleWriter {
         self.offset += data.len() as u64;
         Ok(())
     }
-
     /// Write header + index + payload and close the file.
     pub fn finish(self) -> std::io::Result<()> {
         // The index length is known before writing (fixed per section), so
@@ -158,7 +145,6 @@ impl BundleWriter {
         Ok(())
     }
 }
-
 /// Reader: opens the header + index, fetches sections on demand.
 pub struct BundleReader {
     file: std::io::BufReader<std::fs::File>,
@@ -167,7 +153,6 @@ pub struct BundleReader {
     /// thread while this thread verifies the chunk before it.
     path: String,
 }
-
 impl BundleReader {
     pub fn open(path: &str) -> Result<BundleReader, String> {
         let mut file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
@@ -222,24 +207,20 @@ impl BundleReader {
         // false "crc mismatch (torn write?)" Ã¢â‚¬â€ a real bug, caught by the gate.
         Ok(BundleReader { file: std::io::BufReader::new(file), metas, path: path.to_string() })
     }
-
     /// Generation of a section (B12), if present.
     pub fn section_gen(&self, name: &str) -> Option<u64> {
         self.metas.get(name).map(|m| m.gen)
     }
-
     /// Metadata of a section (offset/len/crc/gen), if present.
     pub fn section_meta(&self, name: &str) -> Option<&SectionMeta> {
         self.metas.get(name)
     }
-
     /// All section names (sorted, deterministic).
     pub fn section_names(&self) -> Vec<String> {
         let mut v: Vec<String> = self.metas.keys().cloned().collect();
         v.sort();
         v
     }
-
     /// Fetch one section, verify its CRC32C, return its bytes.
     ///
     /// The verify runs on a second thread, overlapped with the read. The
@@ -273,7 +254,6 @@ impl BundleReader {
         }
         Ok(buf)
     }
-
     /// The serial form: read the whole section, then one CRC pass. Used
     /// below `PIPELINE_MIN_BYTES`, where the hand-off costs more than the
     /// verify it hides.
@@ -292,7 +272,6 @@ impl BundleReader {
             .map_err(|e| format!("{name}: read {e}"))?;
         Ok(crc_hw(buf))
     }
-
     /// Read `buf` from the section offset on a reader thread and fold the
     /// CRC here, chunk by chunk, as each chunk lands.
     fn read_and_verify(&mut self, name: &str, offset: u64, buf: &mut [u8]) -> Result<u32, String> {
@@ -339,12 +318,10 @@ impl BundleReader {
         })
     }
 }
-
 /// Fixed-width record helpers (all little-endian).
 pub fn u64_at(b: &[u8], i: usize) -> u64 {
     u64::from_le_bytes(b[i * 8..i * 8 + 8].try_into().unwrap())
 }
-
 /// Packed-record accessors. The generic u64_at/i32_at helpers assume an
 /// 8-byte stride; the IMDb sections are PACKED (13/20/12 bytes), so each
 /// record type gets its own accessor. Getting this wrong silently reads
@@ -388,21 +365,18 @@ pub fn pc_n(b: &[u8], i: usize) -> u32 {
     let o = i * 12 + 8;
     u32::from_le_bytes(b[o..o + 4].try_into().unwrap())
 }
-
 // ---------------------------------------------------------------------------
 // B12: incremental section rewrite. Rebuilding the whole bundle costs
 // 40.6 MB even when ONE input changed. `rewrite_sections` writes a NEW
 // bundle in which only the updated sections are re-encoded; every other
 // section is copied byte-for-byte from the old bundle.
 // ---------------------------------------------------------------------------
-
 /// One section to replace in an incremental rewrite.
 pub struct SectionUpdate {
     pub name: String,
     pub data: Vec<u8>,
     pub gen: u64,
 }
-
 /// What an incremental rewrite actually did.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RewriteStats {

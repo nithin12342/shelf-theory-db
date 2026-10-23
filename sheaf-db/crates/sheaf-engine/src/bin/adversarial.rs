@@ -3,9 +3,7 @@
 // A2 delete×merge races, A3 isolation, A4 WAL bit-flips, A5 txn matrix, A6
 // shadow fuzz, A7 prune churn, A8 degenerates). Deterministic fixtures;
 // every section asserts exact state vs an independent model.
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
-
+use std::collections::{BTreeSet, HashMap, HashSet}; use std::sync::Arc;
 use sheaf_engine::transaction::manager::{CommitOutcome, TxnManager};
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 use sheaf_storage::lsp::compactor::Compactor;
@@ -13,21 +11,12 @@ use sheaf_storage::lsp::mem_complex::MemComplex;
 use sheaf_storage::lsp::wal::{self, WalWriter};
 
 fn xorshift(state: &mut u64) -> u64 {
-    let mut x = *state;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    *state = x;
-    x
+    let mut x = *state; x ^= x << 13; x ^= x >> 7; x ^= x << 17; *state = x; x
 }
 fn d64(v: u64) -> [u8; 16] {
-    let mut b = [0u8; 16];
-    b[..8].copy_from_slice(&v.to_le_bytes());
-    b
+    let mut b = [0u8; 16]; b[..8].copy_from_slice(&v.to_le_bytes()); b
 }
-fn orig_of(payload: &[u8]) -> u64 {
-    u64::from_le_bytes(payload[..8].try_into().unwrap())
-}
+fn orig_of(payload: &[u8]) -> u64 { u64::from_le_bytes(payload[..8].try_into().unwrap()) }
 const HEMPTY: [f32; 0] = [];
 
 // Shadow model mirroring engine semantics: inserts always land (even over
@@ -39,18 +28,13 @@ struct Model {
 }
 impl Model {
     fn insert(&mut self, tx: u64, faces: &[u64]) {
-        let mut f = faces.to_vec();
-        f.sort_unstable();
-        self.live.insert(tx, f);
+        let mut f = faces.to_vec(); f.sort_unstable(); self.live.insert(tx, f);
     }
     fn delete_face(&mut self, f: u64) {
-        self.dead_faces.insert(f);
-        self.live.retain(|_, fs| !fs.contains(&f));
+        self.dead_faces.insert(f); self.live.retain(|_, fs| !fs.contains(&f));
     }
 }
-type Reader = sheaf_storage::bcsf::reader::BcsfReader;
-type Snap = sheaf_storage::lsp::snapshot::Snapshot;
-
+type Reader = sheaf_storage::bcsf::reader::BcsfReader; type Snap = sheaf_storage::lsp::snapshot::Snapshot;
 // Exact state of a HELD snapshot: (tx, sorted orig faces) over LIVE dim-2
 // cells in base + batches (batch faces resolve via the snapshot's own base).
 fn dump_snap(snap: &Snap) -> BTreeSet<(u64, Vec<u64>)> {

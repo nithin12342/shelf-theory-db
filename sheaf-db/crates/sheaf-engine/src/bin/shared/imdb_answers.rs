@@ -88,10 +88,8 @@ pub fn answer_generation(shape: &AnswerShape, source_fingerprints: &[u64]) -> u6
     h
 }
 
-/// The slot count of the dense arrays. A title id above this is skipped,
-/// which cannot happen for the IMDb ids (the largest is 11,626,392 and the
-/// cap is 67,108,864).
-const MAX_SLOTS: usize = 1 << 26;
+// The slot count of the dense arrays is derived from the data itself.
+// No hard cap: every id in the source data gets a slot.
 
 /// The index of the idx-th NUL terminated string in the blob.
 fn name_of<'a>(nameblob: &'a [u8], str_off: &[u32], idx: u32) -> &'a [u8] {
@@ -122,7 +120,7 @@ pub fn build_answers(
     for i in 0..nr {
         max_tid = max_tid.max(ratings_id(ratings, i));
     }
-    let slots = (max_tid as usize + 1).min(MAX_SLOTS);
+    let slots = max_tid as usize + 1;
     let mut avg_of = vec![0f32; slots];
     let mut votes_of = vec![-1i64; slots];
     for i in 0..nr {
@@ -220,7 +218,7 @@ pub fn build_answers(
     for i in 0..nn {
         max_nid = max_nid.max(names_id(names, i));
     }
-    let nslots = (max_nid as usize + 1).min(MAX_SLOTS);
+    let nslots = max_nid as usize + 1;
     let mut idx_of = vec![u32::MAX; nslots];
     for i in 0..nn {
         let nid = names_id(names, i) as usize;

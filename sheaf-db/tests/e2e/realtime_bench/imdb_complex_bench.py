@@ -12,9 +12,11 @@ import time
 import duckdb
 import psycopg
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\imdb_job.json"
-IMDB = r"D:\d2\data\imdb"
-DDB = r"D:\bench\data\duckdb\imdb.duckdb"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "imdb_job.json")
+IMDB = P.imdb()
+DDB = P.data("duckdb", "imdb.duckdb")
 PG = {"host": "127.0.0.1", "port": 5433, "user": "postgres", "dbname": "imdb"}
 
 TABLES = ["title.basics", "title.akas", "title.crew", "title.episode",

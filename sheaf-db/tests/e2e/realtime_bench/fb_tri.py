@@ -4,11 +4,14 @@ import time
 
 import duckdb
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\duckdb_real.json"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "duckdb_real.json")
+FB = P.datasets("facebook_combined.txt.gz")
 
 con = duckdb.connect()
 con.execute("CREATE TABLE edge(a INT, b INT)")
-con.execute("COPY edge FROM 'D:\\bench\\datasets\\facebook_combined.txt.gz' (DELIMITER ' ')")
+con.execute(f"COPY edge FROM '{FB}' (DELIMITER ' ')")
 print("a>b rows:", con.execute("SELECT COUNT(*) FROM edge WHERE a>b").fetchone()[0])
 t0 = time.perf_counter_ns()
 tri = con.execute("""SELECT COUNT(*) FROM edge e1

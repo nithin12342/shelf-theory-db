@@ -9,17 +9,22 @@ use std::time::Instant;
 
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 
-const LINEITEM: &str = r"D:\bench\build\tpch-dbgen\lineitem.tbl";
 const EXPECTED_ROWS: usize = 6_001_215;
 const TARGET_MS: f64 = 6.4;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let lineitem = bench_args::required_path(&args, "--lineitem");
+
     // ---- Load (untimed scan convention; cost recorded, mirrors COPY) ----
     let t0 = Instant::now();
     let mut builder = BcsfBuilder::new();
     let mut fused: Vec<f32> = Vec::with_capacity(EXPECTED_ROWS);
     let db = [0u8; 16];
-    let content = std::fs::read(LINEITEM).expect("lineitem.tbl missing");
+    let content = std::fs::read(&lineitem).expect("lineitem.tbl missing");
     let mut start = 0usize;
     let mut n = 0usize;
     for i in 0..content.len() {

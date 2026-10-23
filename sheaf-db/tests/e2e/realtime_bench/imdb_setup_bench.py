@@ -27,7 +27,9 @@ import subprocess
 import sys
 import time
 
-TSV_DIR = r"D:\d2\data\imdb"
+import bench_paths as P
+
+TSV_DIR = P.imdb()
 
 # The row count every file must load. psql returns 0 from a COPY that stops
 # early unless ON_ERROR_STOP is set, so the row count is the check that the
@@ -42,8 +44,8 @@ EXPECTED = {
     "name_basics": 15738257,
 }
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "imdb_setup.json")
-PG_BIN = r"D:\bench\scoop\apps\postgresql\current\bin"
-PG_DATA = r"D:\bench\pgbench_data"
+PG_BIN = P.pg_app()
+PG_DATA = P.pgbench_data()
 PG_PORT = "5433"
 
 # The seven IMDb files, the table name, and the column order of the file.
@@ -84,7 +86,7 @@ def run_duckdb() -> dict:
     """Create and load the seven tables in a fresh DuckDB file."""
     import duckdb
 
-    db = r"D:\bench\data\duckdb_setup.duckdb"
+    db = P.data("duckdb_setup.duckdb")
     for suf in ("", ".wal"):
         p = db + suf
         if os.path.exists(p):

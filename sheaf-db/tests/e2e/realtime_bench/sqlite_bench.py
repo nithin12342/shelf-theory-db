@@ -8,9 +8,11 @@ import random
 import sqlite3
 import time
 
-DATA = r"D:\bench\build\tpch-dbgen"
-DB = r"D:\bench\data\sqlite\bench.db"
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\sqlite.json"
+import bench_paths as P
+
+DATA = P.build("tpch-dbgen")
+DB = P.data("sqlite", "bench.db")
+OUT = str(P.RESULTS / "sqlite.json")
 SEED = 42
 
 SCHEMA = {

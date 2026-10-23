@@ -11,7 +11,7 @@ Both year (partition) and avg (clustering) are key columns, so no
 ALLOW FILTERING is needed.
 
 Rust-first: the write-time join is done by the Rust binary
-`imdb_scylla_prep` (D:\bench\data\imdb_scylla_rows.bin); this script is
+`imdb_scylla_prep` (the --out path); this script is
 only the CQL transport (insert + query + gate).
 Gate: count / votes / avg must equal the shared truth
 (44,906 / 294,435,444 / 8.1455061684) and be > 100x faster than
@@ -25,9 +25,11 @@ import time
 
 from cassandra.cluster import Cluster
 
-ROWS = r"D:\bench\data\imdb_scylla_rows.bin"
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\imdb_scylla.json"
-PREP_BIN = r"D:\d2\sheaf-db\crates\sheaf-engine\src\bin\imdb_scylla_prep.rs"
+import bench_paths as P
+
+ROWS = P.data("imdb_scylla_rows.bin")
+OUT = str(P.RESULTS / "imdb_scylla.json")
+PREP_BIN = str(P.SHEAF_DB / "crates" / "sheaf-engine" / "src" / "bin" / "imdb_scylla_prep.rs")
 CARGO = r"cargo"
 KEYSPACE = "imdb_bench"
 TABLE = "titles"
@@ -44,8 +46,8 @@ def ensure_rows():
     print("rows file missing -> running the Rust prep binary", flush=True)
     subprocess.run(
         [CARGO, "run", "-q", "--release", "--manifest-path",
-         r"D:\d2\sheaf-db\Cargo.toml", "-p", "sheaf-engine",
-         "--bin", "imdb_scylla_prep"],
+         str(P.SHEAF_DB / "Cargo.toml"), "-p", "sheaf-engine",
+         "--bin", "imdb_scylla_prep", "--", "--imdb", P.imdb(), "--out", ROWS],
         check=True,
     )
 

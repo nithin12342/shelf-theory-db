@@ -20,7 +20,6 @@
 // values; published constants are labelled `const`). Output is machine-
 // readable: `key=value` per line. Section E consumes this run's A/B/C
 // measurements, so the derived comparison can never drift from the data.
-
 #[path = "shared/phys_amplification.rs"]
 mod phys_amplification;
 #[path = "shared/phys_ceilings.rs"]
@@ -33,14 +32,11 @@ mod phys_mem;
 mod phys_store;
 #[path = "shared/phys_workload.rs"]
 mod phys_workload;
-
 use phys_mem::{chase_latency_ns, chase_latency_page_spread_ns, read_bandwidth_gbs};
 use std::time::Instant;
-
 // ---------------------------------------------------------------------------
 // A. Latency ladder
 // ---------------------------------------------------------------------------
-
 fn section_a() {
     // The CACHE-TIER latencies are measured in ns, but ns is not a stable
     // quantity here: an L1 hit costs a fixed number of CYCLES, so its
@@ -51,7 +47,6 @@ fn section_a() {
     // figure is the stable one; the ns figure is what a latency-sensitive
     // caller actually experiences.
     let (clock_before, _, _) = phys_mem::measure_clock_ghz();
-
     // Fine sweep across the L1/L2/L3 knees. Each 1 MiB of dense working set
     // adds 256 distinct 4 KiB pages, so the sweep walks the page-table
     // coverage as it walks the cache capacities.
@@ -89,13 +84,11 @@ fn section_a() {
             ns * clock_before
         );
     }
-
     let (clock_after, _, _) = phys_mem::measure_clock_ghz();
     println!(
         "A_clock_GHz_before={:.3} A_clock_GHz_after={:.3}",
         clock_before, clock_after
     );
-
     // TLB penalty, isolated by holding the CACHE footprint constant and
     // varying only the number of distinct 4 KiB pages:
     //   few_pages  -> data packed into few pages  -> TLB resident
@@ -112,7 +105,6 @@ fn section_a() {
         many - few
     );
 }
-
 /// Best-of-N helper: the minimum over `reps` measurements is the least
 /// contended estimate on a shared box.
 fn best_of(reps: usize, mut f: impl FnMut() -> f64) -> f64 {
@@ -125,16 +117,13 @@ fn best_of(reps: usize, mut f: impl FnMut() -> f64) -> f64 {
     }
     best
 }
-
 // ---------------------------------------------------------------------------
 // B. Read bandwidth
 // ---------------------------------------------------------------------------
-
 /// Returns (mean 1-thread GB/s, best multi-thread GB/s, thread scaling series).
 fn section_b() -> (f64, f64, Vec<(usize, f64)>) {
     let n = 64 << 20; // 64 Mi elements u64 = 512 MiB
     let buf: Vec<u64> = (0..n).map(|i| i ^ 0x9E37_79B9).collect();
-
     // 1-thread figure: BEST-of-3 (the machine-balance input must be the
     // least contended single-core number, not an average that the box's
     // background load drags down).
@@ -144,7 +133,6 @@ fn section_b() -> (f64, f64, Vec<(usize, f64)>) {
         g
     });
     println!("B_read_1t_mean_GBps={:.2}", one);
-
     let mut best = 0.0f64;
     let mut series: Vec<(usize, f64)> = vec![(1, one)];
     for t in [2usize, 4, 8] {
@@ -157,11 +145,9 @@ fn section_b() -> (f64, f64, Vec<(usize, f64)>) {
     }
     (one, best, series)
 }
-
 // ---------------------------------------------------------------------------
 // C. Compute rate (cache-resident, so this is the ALUs, not memory)
 // ---------------------------------------------------------------------------
-
 /// Returns (best 1-thread GFLOP/s, all-threads GFLOP/s).
 fn section_c() -> (f64, f64) {
     // 16 KiB of f32 per operand => L1-resident, so we measure the FMA pipes.
@@ -170,7 +156,6 @@ fn section_c() -> (f64, f64) {
     let b: Vec<f32> = (0..n).map(|i| (i % 13) as f32 * 0.02).collect();
     let c: Vec<f32> = (0..n).map(|i| (i % 11) as f32 * 0.03).collect();
     let iters = 400_000;
-
     // The clock probe returns (clock_GHz, add_ratio, imul_ratio) and
     // already aggregates its own 15 inner reps by median. The outer loop
     // runs it 3 more times: the CLOCK is taken as the best of the three
@@ -194,7 +179,6 @@ fn section_c() -> (f64, f64) {
     };
     let implied_ratio = median(add_ratios);
     let imul_ratio = median(imul_ratios);
-
     println!("C_clock_GHz={:.3}", clock_ghz);
     // Cross-check 1: the long chain runs 8 dependent adds per iteration
     // and the short chain 4, so their cycle ratio must be exactly 2.0.
@@ -221,10 +205,8 @@ fn section_c() -> (f64, f64) {
             "FAIL"
         }
     );
-
     let mut best = 0.0f64;
     let mut best_label = "scalar";
-
     {
         let g = best_of(3, || {
             let t0 = Instant::now();
@@ -237,7 +219,6 @@ fn section_c() -> (f64, f64) {
             best_label = "scalar";
         }
     }
-
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
@@ -270,7 +251,6 @@ fn section_c() -> (f64, f64) {
         cfg!(target_arch = "x86_64") && is_x86_feature_detected!("avx512f")
     );
     println!("C_best_path={}", best_label);
-
     // Theoretical FMA peak for the winning path, at the measured clock.
     // avx512: 16 lanes x 2 FMA units x 2 flops = 64 flops/cycle/core.
     // avx2:    8 lanes x 2 FMA units x 2 flops = 32 flops/cycle/core.

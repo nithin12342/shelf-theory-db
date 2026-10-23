@@ -2,8 +2,8 @@
 # Appends one status line per checkpoint; exits (and thus alerts) when the run
 # finishes. Purely read-only against the run's output file.
 param(
-  [string]$OutFile = "C:\Users\NITHING\.local\share\opencode\shell\01c8e5722a550c5fb6584d249642cb4fefbfeb5b\sh_159ea8b89001VbM422Nynur7NY.out",
-  [string]$StatusLog = "C:\Users\NITHING\AppData\Local\Temp\opencode\bench_progress.log",
+  [string]$OutFile = (Join-Path $env:TEMP "sheaf_progress.out"),
+  [string]$StatusLog = (Join-Path $env:TEMP "bench_progress.log"),
   [int]$IntervalSec = 600
 )
 

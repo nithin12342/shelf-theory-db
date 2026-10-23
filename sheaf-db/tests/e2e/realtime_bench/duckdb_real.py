@@ -1,5 +1,5 @@
 """DuckDB on REAL data: IEEE-CIS fraud aggregations + Facebook graph queries.
-Usage: py duckdb_real.py   (duckdb pip package; reads D:\\bench\\datasets)
+Usage: py duckdb_real.py   (duckdb pip package; reads the datasets root)
 """
 import json
 import os
@@ -7,9 +7,11 @@ import time
 
 import duckdb
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\duckdb_real.json"
-FRAUD = r"D:\bench\datasets\ieee-fraud\train_transaction.csv"
-FB = r"D:\bench\datasets\facebook_combined.txt.gz"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "duckdb_real.json")
+FRAUD = P.datasets("ieee-fraud", "train_transaction.csv")
+FB = P.datasets("facebook_combined.txt.gz")
 
 
 def pct(times, p):

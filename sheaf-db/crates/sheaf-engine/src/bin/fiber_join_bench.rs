@@ -18,27 +18,29 @@ use std::time::Instant;
 mod fiber_snapshot;
 use fiber_snapshot::Bundle;
 
-const DIR: &str = r"D:\bench\build\tpch-dbgen";
-const SNAP: &str = r"D:\bench\data\fiber_snapshot.bin";
-// Pre-cache this bench paid a 4.2 s pre-fold EVERY run (it re-sorted
-// 6M+1.5M+150k rows). With the cached bundle the whole bench must fit
-// in 500 ms - and still return the exact total.
 const TOTAL_GATE_MS: f64 = 500.0;
 const EXPECTED_TOTAL: f64 = 93574920897.0;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let dir = bench_args::required_path(&args, "--dir");
+    let snap = bench_args::required_path(&args, "--snap");
+
     // N3: the cached bundle is bound to the source fingerprint; a changed
     // source forces a rebuild instead of a silently stale answer.
     let src_fp = fiber_snapshot::source_fingerprint(&[
-        &format!("{DIR}\\lineitem.tbl"),
-        &format!("{DIR}\\orders.tbl"),
-        &format!("{DIR}\\customer.tbl"),
+        &format!("{dir}\\lineitem.tbl"),
+        &format!("{dir}\\orders.tbl"),
+        &format!("{dir}\\customer.tbl"),
     ]);
     // ---- Cached path (B1): if the bundle exists, walk it and skip the
     // 4.2 s pre-fold entirely. The bundle layout is exactly this bench's
     // (cust,rev) fibers + (cust,seg) segments.
     let t_open = Instant::now();
-    if let Ok(bundle) = Bundle::open(SNAP) {
+    if let Ok(bundle) = Bundle::open(&snap) {
         if !bundle.matches_source(src_fp) {
             println!("fiber_stale: source changed, rebuilding the bundle");
         } else {
@@ -95,7 +97,7 @@ fn main() {
     }
     // ---- Load + pre-fold (untimed, reported): sort both sides by key ----
     let t0 = Instant::now();
-    let content = std::fs::read(format!("{DIR}\\lineitem.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\lineitem.tbl")).unwrap();
     let mut runs: Vec<(u64, f64)> = Vec::with_capacity(6_100_000);
     let mut start = 0usize;
     for i in 0..content.len() {
@@ -132,8 +134,8 @@ fn main() {
     }
     runs.sort_unstable_by_key(|&(k, _)| k);
     // orders: (key, customer, segment) sorted by key
-    let content = std::fs::read(format!("{DIR}\\orders.tbl")).unwrap();
-    let content_c = std::fs::read(format!("{DIR}\\customer.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\orders.tbl")).unwrap();
+    let content_c = std::fs::read(format!("{dir}\\customer.tbl")).unwrap();
     let mut seg_of: Vec<(u64, u8)> = Vec::with_capacity(150_000);
     let mut start = 0usize;
     for i in 0..content_c.len() {
@@ -214,8 +216,8 @@ fn main() {
     // Persist the pre-fold as a bundle (B1) so the next run skips the build.
     // Same layout as the B3 bundle: [nf][(cust,rev)*nf][ns][(cust,seg)*ns].
     let bytes = fiber_snapshot::encode(&fibers, &seg_of, src_fp);
-    if std::fs::write(SNAP, &bytes).is_ok() {
-        println!("fiber_bundle: written {SNAP} ({} bytes)", bytes.len());
+    if std::fs::write(&snap, &bytes).is_ok() {
+        println!("fiber_bundle: written {snap} ({} bytes)", bytes.len());
     }
 
     // ---- Gate: timed streaming walk (NO hash tables, NO searches) ----

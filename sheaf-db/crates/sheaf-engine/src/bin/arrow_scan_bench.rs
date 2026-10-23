@@ -27,14 +27,21 @@ unsafe impl GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc;
 
-const LINEITEM: &str = r"D:\bench\build\tpch-dbgen\lineitem.tbl";
+/// Expected row count for the TPC-H lineitem table.
 const EXPECTED_ROWS: usize = 6_001_215;
+/// Expected revenue sum for the TPC-H lineitem table.
 const EXPECTED_SUM: f64 = 218102223881.86;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let lineitem = bench_args::required_path(&args, "--lineitem");
+
     let t0 = Instant::now();
     let mut slab = ArrowStalkSlab::with_capacity(2, EXPECTED_ROWS + 64);
-    let content = std::fs::read(LINEITEM).expect("lineitem.tbl missing");
+    let content = std::fs::read(&lineitem).expect("lineitem.tbl missing");
     let mut start = 0usize;
     for i in 0..content.len() {
         if content[i] == b'\n' {

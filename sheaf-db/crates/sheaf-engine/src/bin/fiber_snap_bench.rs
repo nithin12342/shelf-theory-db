@@ -11,14 +11,9 @@
 //   query <= 10 ms, totals exact, corrupt copy rejected.
 use std::collections::HashMap;
 use std::time::Instant;
-
 #[path = "shared/fiber_snapshot.rs"]
 mod fiber_snapshot;
 use fiber_snapshot::{Bundle, SNAP_FMT_VER};
-
-const DIR: &str = r"D:\bench\build\tpch-dbgen";
-const SNAP: &str = r"D:\bench\data\fiber_snapshot.bin";
-const SNAP_BAD: &str = r"D:\bench\data\fiber_snapshot.bad";
 const EXPECTED_TOTAL: f64 = 93574920897.0;
 // Gates (measured, 2026-10-20). BEFORE (per-element deserialize):
 //   load 158.1 ms + query 6.6 ms = 164.8 ms total.
@@ -60,27 +55,19 @@ const EXPECTED_TOTAL: f64 = 93574920897.0;
 // byte-wise IEEE CRC for the repo's SSE4.2 CRC32C (hw 8.5-16.4 ms vs soft
 // 110-172 ms measured).
 const MIN_SPEEDUP: f64 = 2.0;
-
-type Fibers = Vec<(u64, f64)>;
-type Segs = Vec<(u64, u8)>;
-
+type Fibers = Vec<(u64, f64)>; type Segs = Vec<(u64, u8)>;
 fn parse_u64(line: &[u8], field: usize) -> u64 {
-    let mut fs = 0usize;
-    let mut fstart = 0usize;
+    let (mut fs, mut fstart) = (0usize, 0usize);
     for j in 0..line.len() {
         if line[j] == b'|' {
-            if fs == field {
-                return std::str::from_utf8(&line[fstart..j]).unwrap().parse().unwrap();
-            }
-            fs += 1;
-            fstart = j + 1;
+            if fs == field { return std::str::from_utf8(&line[fstart..j]).unwrap().parse().unwrap(); }
+            fs += 1; fstart = j + 1;
         }
     }
     panic!("field {field} missing");
 }
-
-fn build() -> (Fibers, Segs) {
-    let content = std::fs::read(format!("{DIR}\\lineitem.tbl")).unwrap();
+fn build(dir: &str) -> (Fibers, Segs) {
+    let content = std::fs::read(format!("{dir}\\lineitem.tbl")).unwrap();
     let mut runs: Vec<(u64, f64)> = Vec::with_capacity(6_100_000);
     let mut start = 0usize;
     for i in 0..content.len() {
@@ -118,7 +105,7 @@ fn build() -> (Fibers, Segs) {
         }
     }
     runs.sort_unstable_by_key(|&(k, _)| k);
-    let content_c = std::fs::read(format!("{DIR}\\customer.tbl")).unwrap();
+    let content_c = std::fs::read(format!("{dir}\\customer.tbl")).unwrap();
     let mut seg_of: Vec<(u64, u8)> = Vec::with_capacity(150_000);
     let mut start = 0usize;
     for i in 0..content_c.len() {
@@ -156,7 +143,7 @@ fn build() -> (Fibers, Segs) {
         }
     }
     seg_of.sort_unstable_by_key(|&(k, _)| k);
-    let content = std::fs::read(format!("{DIR}\\orders.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\orders.tbl")).unwrap();
     let mut orders: Vec<(u64, u64)> = Vec::with_capacity(1_500_000);
     let mut start = 0usize;
     for i in 0..content.len() {
@@ -183,7 +170,6 @@ fn build() -> (Fibers, Segs) {
     fibers.sort_unstable_by_key(|&(c, _)| c);
     (fibers, seg_of)
 }
-
 /// Reference path: the pre-change per-element deserialize (Vec::push per
 /// tuple). Timed in the SAME run as the zero-copy path so the comparison is
 /// environment-independent: the absolute cost of a run depends on the page
@@ -213,7 +199,6 @@ fn reference_deserialize(bytes: &[u8]) -> (Fibers, Segs) {
     }
     (fibers, segs)
 }
-
 /// Reference path: the TRUE pre-B3 path, measured in the SAME process on
 /// the SAME file: file read + byte-at-a-time IEEE CRC32 (the old integrity
 /// primitive, `wal::crc32`) + per-element Vec::push deserialize + the same
@@ -264,19 +249,22 @@ fn reference_full_path(bytes: &[u8]) -> (f64, f64) {
     let total: f64 = seg_tot.iter().sum();
     (crc_ms + deserialize_ms + walk_ms, total)
 }
-
+#[path = "shared/bench_args.rs"] mod bench_args;
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let dir = bench_args::required_path(&args, "--dir");
+    let (snap, snap_bad) = (bench_args::required_path(&args, "--snap"), bench_args::required_path(&args, "--snap-bad"));
     // ---- N3: the bundle is bound to the SOURCE data's fingerprint. A
     // changed source (new rows, edited file) invalidates it: rebuild,
     // never a silently stale bundle.
     let src_fp = fiber_snapshot::source_fingerprint(&[
-        &format!("{DIR}\\lineitem.tbl"),
-        &format!("{DIR}\\orders.tbl"),
-        &format!("{DIR}\\customer.tbl"),
+        &format!("{dir}\\lineitem.tbl"),
+        &format!("{dir}\\orders.tbl"),
+        &format!("{dir}\\customer.tbl"),
     ]);
     // ---- Build once if missing / wrong format / stale source ----
     let mut stale = false;
-    let need_build = match std::fs::read(SNAP) {
+    let need_build = match std::fs::read(&snap) {
         Err(_) => true,
         Ok(raw) => {
             let bad = raw.len() < 32
@@ -299,9 +287,9 @@ fn main() {
     };
     if need_build {
         let t0 = Instant::now();
-        let (fibers, seg_of) = build();
+        let (fibers, seg_of) = build(&dir);
         let bytes = fiber_snapshot::encode(&fibers, &seg_of, src_fp);
-        std::fs::write(SNAP, &bytes).expect("snapshot write");
+        std::fs::write(&snap, &bytes).expect("snapshot write");
         println!(
             "snap_build: {:.1}s fibers={} segs={} bytes={}",
             t0.elapsed().as_secs_f64(),
@@ -310,26 +298,24 @@ fn main() {
             bytes.len()
         );
     }
-
     // ---- Negative test: corrupted copy must be rejected (fail loud) ----
-    let raw = std::fs::read(SNAP).expect("snapshot missing after build");
+    let raw = std::fs::read(&snap).expect("snapshot missing after build");
     let mut bad = raw.clone();
     let flip = 32.min(bad.len() - 1);
     bad[flip] ^= 0xFF;
-    std::fs::write(SNAP_BAD, &bad).expect("bad-file write");
-    let rejected = Bundle::from_bytes(&std::fs::read(SNAP_BAD).unwrap()).is_err();
-    let _ = std::fs::remove_file(SNAP_BAD);
+    std::fs::write(&snap_bad, &bad).expect("bad-file write");
+    let rejected = Bundle::from_bytes(&std::fs::read(&snap_bad).unwrap()).is_err();
+    let _ = std::fs::remove_file(&snap_bad);
     println!(
         "gate_snap_corrupt_reject={}",
         if rejected { "PASS" } else { "FAIL" }
     );
-
     // ---- Timed: zero-copy load (read once + CRC) ----
     // Read twice into the SAME destination buffer: the second read reuses
     // already-faulted pages, so the delta isolates first-touch page-fault
     // cost from the kernel copy cost.
     let t0 = Instant::now();
-    let read_result = std::fs::read(SNAP);
+    let read_result = std::fs::read(&snap);
     let read_ms = t0.elapsed().as_secs_f64() * 1e3;
     let buf: Vec<u8> = match read_result {
         Ok(b) => b,
@@ -346,7 +332,7 @@ fn main() {
     let t0b = Instant::now();
     {
         use std::io::Read;
-        let mut f = match std::fs::File::open(SNAP) {
+        let mut f = match std::fs::File::open(&snap) {
             Ok(f) => f,
             Err(e) => {
                 println!("gate_snap_exact=FAIL (open: {e})");

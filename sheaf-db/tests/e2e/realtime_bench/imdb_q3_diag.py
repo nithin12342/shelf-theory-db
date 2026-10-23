@@ -5,7 +5,9 @@ startyear in each engine, (4) NULL handling of the WHERE predicates.
 import duckdb
 import psycopg
 
-DDB = r"D:\bench\data\duckdb\imdb.duckdb"
+import bench_paths as P
+
+DDB = P.data("duckdb", "imdb.duckdb")
 PG = {"host": "127.0.0.1", "port": 5433, "user": "postgres", "dbname": "imdb"}
 
 con = duckdb.connect(DDB)

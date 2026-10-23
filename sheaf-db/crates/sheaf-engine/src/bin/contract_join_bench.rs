@@ -8,13 +8,18 @@ use std::time::Instant;
 
 use sheaf_kernel::operators::contraction::contract_grouped;
 
-const DIR: &str = r"D:\bench\build\tpch-dbgen";
 const EXPECTED_TOTAL: f64 = 93574920897.0;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let dir = bench_args::required_path(&args, "--dir");
+
     // ---- Pre-fold (untimed, reported): fibers + (value, seg) flattening ----
     let t0 = Instant::now();
-    let content = std::fs::read(format!("{DIR}\\lineitem.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\lineitem.tbl")).unwrap();
     let mut runs: Vec<(u64, f64)> = Vec::with_capacity(6_100_000);
     let mut start = 0usize;
     for i in 0..content.len() {
@@ -50,8 +55,8 @@ fn main() {
         }
     }
     runs.sort_unstable_by_key(|&(k, _)| k);
-    let content = std::fs::read(format!("{DIR}\\orders.tbl")).unwrap();
-    let content_c = std::fs::read(format!("{DIR}\\customer.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\orders.tbl")).unwrap();
+    let content_c = std::fs::read(format!("{dir}\\customer.tbl")).unwrap();
     let mut seg_of: Vec<(u64, u8)> = Vec::with_capacity(150_000);
     let mut start = 0usize;
     for i in 0..content_c.len() {

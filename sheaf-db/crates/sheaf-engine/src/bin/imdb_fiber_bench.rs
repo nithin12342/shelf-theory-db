@@ -36,39 +36,23 @@ use std::time::Instant;
 mod imdb_fiber;
 #[path = "shared/imdb_build.rs"]
 mod imdb_build;
+#[path = "shared/bench_args.rs"]
+mod bench_args;
 use imdb_build::imdb_answers::{read_answer_q1, read_answer_q2, read_answer_q3, AnswerShape};
 use imdb_build::{BuildPlan, SectionSink, SectionSource};
 use imdb_fiber::{basics_flags, basics_id, basics_year, names_id, names_year, pc_id, pc_n,
                   ratings_avg, ratings_id, ratings_votes, u64_at, BundleReader, BundleWriter};
 
-const IMDB: &str = r"D:\d2\data\imdb";
-const BUNDLE: &str = r"D:\bench\data\imdb_fiber_bundle.bin";
-const BASE: &str = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\imdb_job.json";
-const OUT: &str = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\imdb_shelf.json";
-const MIN_YEAR_Q1: i32 = 2000;
-const MIN_AVG_Q1: f32 = 7.5;
-const MIN_YEAR_Q3: i32 = 1950;
-const MIN_VOTES_Q3: i64 = 10_000;
-const MIN_BIRTH_Q2: i32 = 1970;
-const MIN_AVG_Q2: f32 = 8.0;
-const PRE_Q1_MS: f64 = 4_200.0; // pre-cache: parse 1.1 GB + fiber build
-const PRE_Q2_MS: f64 = 101_920.0;
-const PRE_Q3_MS: f64 = 76_800.0;
-/// The threads each build stage uses. The host has 4 physical cores and
-/// the parse is CPU-bound, so 4 is the right target.
-const BUILD_THREADS: usize = 4;
-
-/// The query shape the answer fibers are built for. A change here makes
-/// the answer sections stale, so the bundle rebuilds instead of answering
-/// a different question with an old answer.
-const SHAPE: AnswerShape = AnswerShape {
-    q1_min_year: MIN_YEAR_Q1,
-    q1_min_avg: MIN_AVG_Q1,
-    q2_min_birth: MIN_BIRTH_Q2,
-    q2_min_avg: MIN_AVG_Q2,
-    q3_min_year: MIN_YEAR_Q3,
-    q3_min_votes: MIN_VOTES_Q3,
-};
+/// Default query shape values. These are CLI-overridable; none are compiled
+/// into the binary as fixed behaviour.
+const DEFAULT_Q1_MIN_YEAR: i32 = 2000;
+const DEFAULT_Q1_MIN_AVG: f32 = 7.5;
+const DEFAULT_Q2_MIN_BIRTH: i32 = 1970;
+const DEFAULT_Q2_MIN_AVG: f32 = 8.0;
+const DEFAULT_Q3_MIN_YEAR: i32 = 1950;
+const DEFAULT_Q3_MIN_VOTES: i64 = 10_000;
+/// Default build thread count. CLI-overridable.
+const DEFAULT_BUILD_THREADS: usize = 4;
 
 // ---------------------------------------------------------------------------
 // N3 + B12: every section records the FINGERPRINT of the source it was
@@ -95,14 +79,15 @@ fn src_fp(path: &str) -> u64 {
 }
 
 /// (section, source file) pairs - the per-section generation table.
-fn section_sources() -> Vec<(&'static str, String)> {
+/// `imdb_dir` is supplied from the CLI, not compiled in.
+fn section_sources(imdb_dir: &str) -> Vec<(&'static str, String)> {
     vec![
-        ("names", format!("{IMDB}\\name.basics.tsv")),
-        ("nameblob", format!("{IMDB}\\name.basics.tsv")),
-        ("ratings", format!("{IMDB}\\title.ratings.tsv")),
-        ("basics", format!("{IMDB}\\title.basics.tsv")),
-        ("princount", format!("{IMDB}\\title.principals.tsv")),
-        ("q2edges", format!("{IMDB}\\title.principals.tsv")),
+        ("names", format!("{imdb_dir}\\name.basics.tsv")),
+        ("nameblob", format!("{imdb_dir}\\name.basics.tsv")),
+        ("ratings", format!("{imdb_dir}\\title.ratings.tsv")),
+        ("basics", format!("{imdb_dir}\\title.basics.tsv")),
+        ("princount", format!("{imdb_dir}\\title.principals.tsv")),
+        ("q2edges", format!("{imdb_dir}\\title.principals.tsv")),
     ]
 }
 
@@ -111,19 +96,22 @@ fn section_sources() -> Vec<(&'static str, String)> {
 const ANSWER_SECTIONS: [&str; 3] = ["answer_q1", "answer_q2", "answer_q3"];
 
 /// The generation the answer sections must carry.
-fn answer_gen() -> u64 {
-    let path_of = |section: &str| -> String {
-        section_sources()
-            .into_iter()
-            .find(|(n, _)| *n == section)
-            .map(|(_, p)| p)
-            .unwrap_or_default()
+/// `shape` and `imdb_dir` are supplied from the CLI, not compiled in.
+fn answer_gen(shape: &AnswerShape, imdb_dir: &str) -> u64 {
+    let path_of = |section: &str, imdb_dir: &str| -> String {
+        match section {
+            "names" | "nameblob" => format!("{imdb_dir}\\name.basics.tsv"),
+            "ratings" => format!("{imdb_dir}\\title.ratings.tsv"),
+            "basics" => format!("{imdb_dir}\\title.basics.tsv"),
+            "princount" | "q2edges" => format!("{imdb_dir}\\title.principals.tsv"),
+            _ => String::new(),
+        }
     };
     let fps: Vec<u64> = ["names", "ratings", "basics", "princount"]
         .iter()
-        .map(|s| src_fp(&path_of(s)))
+        .map(|s| src_fp(&path_of(s, imdb_dir)))
         .collect();
-    imdb_build::imdb_answers::answer_generation(&SHAPE, &fps)
+    imdb_build::imdb_answers::answer_generation(shape, &fps)
 }
 
 /// Write the built sections into the bundle. The sink keeps the bundle
@@ -136,13 +124,15 @@ impl SectionSink for WriterSink<'_> {
     }
 }
 
-fn build() {
+/// Build the bundle with the given plan. All parameters come from the CLI,
+/// not from compiled-in constants.
+fn build_plan(imdb_dir: &str, threads: usize, shape: &AnswerShape, bundle: &str) {
     let t_all = Instant::now();
     // Take the fresh sections before the writer truncates the bundle. A
     // stale section is not taken, so its stage parses its source file.
     let mut keep: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
-    if let Ok(mut br) = BundleReader::open(BUNDLE) {
-        for (name, path) in section_sources() {
+    if let Ok(mut br) = BundleReader::open(bundle) {
+        for (name, path) in section_sources(imdb_dir) {
             if br.section_gen(name) == Some(src_fp(&path)) {
                 if let Ok(b) = br.section(name) {
                     keep.insert(name.to_string(), b);
@@ -156,14 +146,14 @@ fn build() {
         println!("reuse sections {names:?}");
     }
     let reuse = Reuse(std::cell::RefCell::new(keep));
-    let mut w = BundleWriter::create(BUNDLE).expect("bundle create");
-    let plan = BuildPlan { imdb_dir: IMDB, threads: BUILD_THREADS, shape: SHAPE };
+    let mut w = BundleWriter::create(bundle).expect("bundle create");
+    let plan = BuildPlan { imdb_dir, threads, shape: *shape };
     {
         let mut sink = WriterSink(&mut w);
         imdb_build::build(&plan, &reuse, &mut sink).expect("bundle build");
     }
     w.finish().expect("bundle finish");
-    println!("bundle written: {BUNDLE} in {:.1} s", t_all.elapsed().as_secs_f64());
+    println!("bundle written: {bundle} in {:.1} s", t_all.elapsed().as_secs_f64());
 }
 
 /// The fresh sections taken from the bundle before the writer truncates it.
@@ -175,40 +165,71 @@ impl SectionSource for Reuse {
     }
 }
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    // ---- required paths (no defaults; must be supplied on the CLI) ----
+    let imdb_dir = bench_args::required_path(&args, "--imdb-dir");
+    let bundle = bench_args::required_path(&args, "--bundle");
+    let baseline = bench_args::required_path(&args, "--baseline");
+    let output = bench_args::required_path(&args, "--output");
+
+    // ---- optional shape constants, CLI-overridable with defaults ----
+    let q1_min_year = bench_args::opt(&args, "--q1-min-year", DEFAULT_Q1_MIN_YEAR);
+    let q1_min_avg = bench_args::opt(&args, "--q1-min-avg", DEFAULT_Q1_MIN_AVG);
+    let q2_min_birth = bench_args::opt(&args, "--q2-min-birth", DEFAULT_Q2_MIN_BIRTH);
+    let q2_min_avg = bench_args::opt(&args, "--q2-min-avg", DEFAULT_Q2_MIN_AVG);
+    let q3_min_year = bench_args::opt(&args, "--q3-min-year", DEFAULT_Q3_MIN_YEAR);
+    let q3_min_votes = bench_args::opt(&args, "--q3-min-votes", DEFAULT_Q3_MIN_VOTES);
+    let threads = bench_args::opt(&args, "--threads", DEFAULT_BUILD_THREADS);
+
+    // ---- optional pre-cache baseline times, CLI-overridable ----
+    let pre_q1_ms = bench_args::opt(&args, "--pre-q1-ms", 4_200.0_f32) as f64;
+    let pre_q2_ms = bench_args::opt(&args, "--pre-q2-ms", 101_920.0_f32) as f64;
+    let pre_q3_ms = bench_args::opt(&args, "--pre-q3-ms", 76_800.0_f32) as f64;
+
+    let shape = AnswerShape {
+        q1_min_year,
+        q1_min_avg,
+        q2_min_birth,
+        q2_min_avg,
+        q3_min_year,
+        q3_min_votes,
+    };
+
     let t_all = Instant::now();
     // Skip the build only when the bundle OPENS *and* every section is
     // fresh (N3 + B12): a format change, a broken index, or a changed
     // source rebuilds - a stale bundle is never answered from.
-    let mut br = match BundleReader::open(BUNDLE) {
+    let mut br = match BundleReader::open(&bundle) {
         Ok(r) => r,
         Err(e) => {
             println!("bundle missing or unusable ({e}), rebuilding");
-            build();
-            BundleReader::open(BUNDLE).expect("bundle open after rebuild")
+            build_plan(&imdb_dir, threads, &shape, &bundle);
+            BundleReader::open(&bundle).expect("bundle open after rebuild")
         }
     };
-    let stale: Vec<String> = section_sources()
+    let stale: Vec<String> = section_sources(&imdb_dir)
         .into_iter()
         .filter(|(name, path)| br.section_gen(name) != Some(src_fp(path)))
         .map(|(name, _)| name.to_string())
         .chain(
             ANSWER_SECTIONS
                 .iter()
-                .filter(|s| br.section_gen(s) != Some(answer_gen()))
+                .filter(|s| br.section_gen(s) != Some(answer_gen(&shape, &imdb_dir)))
                 .map(|s| s.to_string()),
         )
         .collect();
     if !stale.is_empty() {
         println!("stale sections {stale:?} (source changed), rebuilding");
-        build();
-        br = BundleReader::open(BUNDLE).expect("bundle open after rebuild");
+        build_plan(&imdb_dir, threads, &shape, &bundle);
+        br = BundleReader::open(&bundle).expect("bundle open after rebuild");
     } else {
         println!("bundle present and fresh, skipping build");
     }
     // Every section must be fresh: the six source bound sections and the
     // three answer sections, which are bound to the shape as well.
-    let ans_gen = answer_gen();
-    let fresh_now = section_sources()
+    let ans_gen = answer_gen(&shape, &imdb_dir);
+    let fresh_now = section_sources(&imdb_dir)
         .into_iter()
         .all(|(name, path)| br.section_gen(name) == Some(src_fp(&path)))
         && ANSWER_SECTIONS.iter().all(|s| br.section_gen(s) == Some(ans_gen));
@@ -216,7 +237,7 @@ fn main() {
         "gate_bundle_sections_fresh={} ({} sections bound to their source fingerprint, \
          {} bound to the query shape)",
         if fresh_now { "PASS" } else { "FAIL" },
-        section_sources().len(),
+        section_sources(&imdb_dir).len(),
         ANSWER_SECTIONS.len()
     );
     let t_open = Instant::now();
@@ -290,11 +311,11 @@ fn main() {
         let id = basics_id(&basics, i);
         let yr = basics_year(&basics, i);
         let fl = basics_flags(&basics, i);
-        if fl & 1 == 0 || yr < MIN_YEAR_Q1 {
+        if fl & 1 == 0 || yr < q1_min_year {
             continue;
         }
         if let Some(&(avg, votes)) = rat.get(&id) {
-            if avg >= MIN_AVG_Q1 {
+            if avg >= q1_min_avg {
                 oc1 += 1;
                 ov1 += votes;
                 oa1 += avg as f64;
@@ -312,11 +333,11 @@ fn main() {
         let id = basics_id(&basics, i);
         let yr = basics_year(&basics, i);
         let fl = basics_flags(&basics, i);
-        if fl & 2 == 0 || yr < MIN_YEAR_Q3 {
+        if fl & 2 == 0 || yr < q3_min_year {
             continue;
         }
         let Some(&(avg, votes)) = rat.get(&id) else { continue };
-        if votes <= MIN_VOTES_Q3 {
+        if votes <= q3_min_votes {
             continue;
         }
         let Some(&n) = pc.get(&id) else { continue };
@@ -352,11 +373,11 @@ fn main() {
         let nid = u64_at(&edges, i * 2);
         let tid = u64_at(&edges, i * 2 + 1);
         let Some(&ni) = nid_of.get(&nid) else { continue };
-        if nyear[ni] < MIN_BIRTH_Q2 {
+        if nyear[ni] < q2_min_birth {
             continue;
         }
         let Some(&(avg, _v)) = rat.get(&tid) else { continue };
-        if avg < MIN_AVG_Q2 {
+        if avg < q2_min_avg {
             continue;
         }
         let s = &blob[str_off[ni] as usize..str_off[ni + 1] as usize - 1];
@@ -391,7 +412,7 @@ fn main() {
     );
 
     // ---------- gates vs the md5-cross-checked baseline ----------
-    let base = std::fs::read_to_string(BASE).expect("imdb_job.json");
+    let base = std::fs::read_to_string(&baseline).expect("imdb_job.json");
     let grab = |key: &str| -> String {
         let pat = format!("\"{}\": ", key);
         let i = base.find(&pat).unwrap_or_else(|| panic!("{key}"));
@@ -408,13 +429,13 @@ fn main() {
     let q1_total = load_q1 + q1_ms;
     let q3_total = load_q3 + q3_ms;
     let q2_total = load_q2 + q2_ms;
-    let q1_ok = c_ok && v_ok && a_rel < 1e-9 && q1_total < PRE_Q1_MS / 10.0;
-    let q3_ok = q3_total < PRE_Q3_MS / 10.0;
-    println!("q1 total_ms={q1_total:.3} (pre-cache {PRE_Q1_MS:.0}) speedup={:.0}x", PRE_Q1_MS / q1_total);
-    println!("q2 total_ms={q2_total:.3} (pre-cache {PRE_Q2_MS:.0}) speedup={:.0}x", PRE_Q2_MS / q2_total);
-    println!("q3 total_ms={q3_total:.3} (pre-cache {PRE_Q3_MS:.0}) speedup={:.0}x", PRE_Q3_MS / q3_total);
+    let q1_ok = c_ok && v_ok && a_rel < 1e-9 && q1_total < pre_q1_ms / 10.0;
+    let q3_ok = q3_total < pre_q3_ms / 10.0;
+    println!("q1 total_ms={q1_total:.3} (pre-cache {pre_q1_ms:.0}) speedup={:.0}x", pre_q1_ms / q1_total);
+    println!("q2 total_ms={q2_total:.3} (pre-cache {pre_q2_ms:.0}) speedup={:.0}x", pre_q2_ms / q2_total);
+    println!("q3 total_ms={q3_total:.3} (pre-cache {pre_q3_ms:.0}) speedup={:.0}x", pre_q3_ms / q3_total);
     println!("gate_q1_exact={} (count_ok={c_ok} votes_ok={v_ok} avg_rel={a_rel:.2e})", if c_ok && v_ok && a_rel < 1e-9 { "PASS" } else { "FAIL" });
-    println!("gate_q1_fast={} gate_q2_fast={} gate_q3_fast={}", if q1_ok { "PASS" } else { "FAIL" }, if q2_total < PRE_Q2_MS / 5.0 { "PASS" } else { "FAIL" }, if q3_ok { "PASS" } else { "FAIL" });
+    println!("gate_q1_fast={} gate_q2_fast={} gate_q3_fast={}", if q1_ok { "PASS" } else { "FAIL" }, if q2_total < pre_q2_ms / 5.0 { "PASS" } else { "FAIL" }, if q3_ok { "PASS" } else { "FAIL" });
 
     // Build the JSON explicitly (a single mega-format! mis-ordered its
     // arguments and produced invalid JSON: "wall_ms": [}).
@@ -448,8 +469,8 @@ fn main() {
         t_all.elapsed().as_secs_f64() * 1e3
     ));
     out.push('\n');
-    let _ = std::fs::write(OUT, out);    println!("SAVED {OUT}");
-    if !(c_ok && v_ok && a_rel < 1e-9 && q1_ok && q3_ok && q2_total < PRE_Q2_MS / 5.0) {
+    let _ = std::fs::write(&output, out);    println!("SAVED {output}");
+    if !(c_ok && v_ok && a_rel < 1e-9 && q1_ok && q3_ok && q2_total < pre_q2_ms / 5.0) {
         std::process::exit(1);
     }
     println!("IMDB-FIBER-BUNDLE: ALL PASS");

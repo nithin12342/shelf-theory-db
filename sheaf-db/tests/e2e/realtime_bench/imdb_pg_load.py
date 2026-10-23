@@ -14,7 +14,9 @@ import time
 import duckdb
 import psycopg
 
-DDB = r"D:\bench\data\duckdb\imdb.duckdb"
+import bench_paths as P
+
+DDB = P.data("duckdb", "imdb.duckdb")
 PG = {"host": "127.0.0.1", "port": 5433, "user": "postgres", "dbname": "imdb"}
 TABLES = ["title_basics", "title_akas", "title_crew", "title_episode",
           "title_principals", "title_ratings", "name_basics"]

@@ -8,8 +8,10 @@ import random
 import sys
 import time
 
-DATA = r"D:\bench\build\tpch-dbgen"
-OUTDIR = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results"
+import bench_paths as P
+
+DATA = P.build("tpch-dbgen")
+OUTDIR = str(P.RESULTS)
 SEED = 42
 
 SCHEMA_COMMON = {

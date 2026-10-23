@@ -9,7 +9,9 @@ import time
 from cassandra.cluster import Cluster
 from cassandra.query import BatchStatement
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\scylladb.json"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "scylladb.json")
 SEED = 42
 NKEYS = 500_000
 

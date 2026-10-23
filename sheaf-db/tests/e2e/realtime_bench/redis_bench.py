@@ -8,7 +8,9 @@ import time
 
 import redis
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\redis.json"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "redis.json")
 SEED = 42
 NKEYS = 1_000_000
 

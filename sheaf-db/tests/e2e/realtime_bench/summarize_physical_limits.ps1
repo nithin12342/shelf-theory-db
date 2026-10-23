@@ -1,4 +1,4 @@
-param([string]$Dir = "D:\d2\sheaf-db\tests\e2e\realtime_bench\results")
+param([string]$Dir = (Join-Path $PSScriptRoot "results"))
 $files = Get-ChildItem "$Dir\pl_run*.txt" | Sort-Object Name
 $runs = $files | ForEach-Object { Get-Content $_.FullName }
 

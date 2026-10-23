@@ -62,6 +62,7 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-056 | Zero-copy WAL replay | FiberLifecycle B14 | SPEC-056 |
 | REQ-057 | Von Neumann physical-limit study (measured hierarchy vs derived floors) | VN-Physics | SPEC-057 |
 | REQ-058 | Remove the measured performance waste (materialize the answer, parse the build once per line, verify while loading, re-measure the opponent setup) | Perf-Waste 2026-10-22 | SPEC-058 |
+| REQ-059 | No host path in executable code or bench scripts; every root comes from a flag or the per-machine bench config | Portability 2026-10-23 | SPEC-059 |
 
 ## SPEC details (acceptance = gate)
 

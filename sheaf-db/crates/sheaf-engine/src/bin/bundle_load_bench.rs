@@ -29,11 +29,14 @@ use sheaf_storage::lsp::ring_wal::{
     crc_hw, crc_state_finish, crc_state_init, crc_state_update,
 };
 
-const BUNDLE: &str = r"D:\bench\data\imdb_fiber_bundle.bin";
 const SECTIONS: [&str; 2] = ["basics", "ratings"];
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
-    let path = std::env::args().nth(1).unwrap_or_else(|| BUNDLE.to_string());
+    let args: Vec<String> = std::env::args().collect();
+    let path = bench_args::required_path(&args, "--bundle");
     let file_len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     let mut crc_gate_chunks = 0u32;
     let mut crc_gate_bad = 0u32;

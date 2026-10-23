@@ -10,9 +10,13 @@ use std::time::Instant;
 
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 
-const DIR: &str = r"D:\bench\build\tpch-dbgen";
+#[path = "shared/bench_args.rs"]
+mod bench_args;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let dir = bench_args::required_path(&args, "--dir");
+
     // ---- Pass 1 (untimed): customer segments + order->customer map ----
     let t0 = Instant::now();
     let mut seg_of: HashMap<u64, u8> = HashMap::with_capacity(160_000);
@@ -23,7 +27,7 @@ fn main() {
         "HOUSEHOLD" => 3,
         _ => 4, // MACHINERY
     };
-    let content = std::fs::read(format!("{DIR}\\customer.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\customer.tbl")).unwrap();
     let mut start = 0usize;
     let mut cust_ids: Vec<u64> = Vec::with_capacity(150_000);
     for i in 0..content.len() {
@@ -52,7 +56,7 @@ fn main() {
         }
     }
     // order -> customer
-    let content = std::fs::read(format!("{DIR}\\orders.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\orders.tbl")).unwrap();
     let mut start = 0usize;
     let mut order_cust: HashMap<u64, u64> = HashMap::with_capacity(1_600_000);
     let mut order_keys: Vec<u64> = Vec::with_capacity(1_500_000);
@@ -82,7 +86,7 @@ fn main() {
     // ---- Pass 2+3 (TIMED): lineitem stream -> per-order revenue, then
     // build BCSF (customers 0-cells + orders 2-cells) and diffuse ----
     let t0 = Instant::now();
-    let content = std::fs::read(format!("{DIR}\\lineitem.tbl")).unwrap();
+    let content = std::fs::read(format!("{dir}\\lineitem.tbl")).unwrap();
     let mut order_rev: HashMap<u64, f64> = HashMap::with_capacity(1_600_000);
     let mut start = 0usize;
     // fields: 0 orderkey, 5 price, 6 discount, 10 shipdate

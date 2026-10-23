@@ -7,10 +7,15 @@ use std::time::Instant;
 
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 
-const LINEITEM: &str = r"D:\bench\build\tpch-dbgen\lineitem.tbl";
 const EXPECTED_ROWS: usize = 6_001_215;
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let lineitem = bench_args::required_path(&args, "--lineitem");
+
     // ---- Load (untimed, reported separately) ----
     let t0 = Instant::now();
     let mut builder = BcsfBuilder::new();
@@ -18,7 +23,7 @@ fn main() {
     let mut db = [0u8; 16];
     // Reuse one discrete block; per-row orderkey skipped for scan speed
     // (scan touches stalks only — discrete layout irrelevant to the gate).
-    let content = std::fs::read(LINEITEM).expect("lineitem.tbl missing");
+    let content = std::fs::read(&lineitem).expect("lineitem.tbl missing");
     let mut start = 0usize;
     for i in 0..content.len() {
         if content[i] == b'\n' {

@@ -28,15 +28,19 @@ mod imdb_fiber;
 use imdb_fiber::{basics_flags, basics_id, basics_year, ratings_avg, ratings_id, ratings_votes,
                   BundleReader};
 
-const BUNDLE: &str = r"D:\bench\data\imdb_fiber_bundle.bin";
-const MIN_YEAR: i32 = 2000;
-const MIN_AVG: f32 = 7.5;
-const THREADS: usize = 4;
-
 type Res = (usize, i64, f64);
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
-    let mut br = BundleReader::open(BUNDLE).expect("open");
+    let args: Vec<String> = std::env::args().collect();
+    let bundle = bench_args::required_path(&args, "--bundle");
+    let min_year: i32 = bench_args::opt(&args, "--min-year", 2000);
+    let min_avg: f32 = bench_args::opt(&args, "--min-avg", 7.5);
+    let threads: usize = bench_args::opt(&args, "--threads", 4);
+
+    let mut br = BundleReader::open(&bundle).expect("open");
     let t = Instant::now();
     let basics = br.section("basics").expect("basics");
     let ratings = br.section("ratings").expect("ratings");
@@ -52,32 +56,32 @@ fn main() {
 
     // ---- variant A: the current code ----
     let t = Instant::now();
-    let a = variant_one(&basics, &ratings, nb, nr, 1);
+    let a = variant_one(&basics, &ratings, nb, nr, 1, min_year, min_avg);
     let a_ms = t.elapsed().as_secs_f64() * 1e3;
     println!("Q1KB_A_one_thread_one_acc ms={a_ms:.1} count={} votes={} avg={:.6}", a.0, a.1, a.2 / a.0 as f64);
 
     // ---- variant B: 4 accumulators, still 1 thread ----
     let t = Instant::now();
-    let b = variant_four_acc(&basics, &ratings, nb, nr);
+    let b = variant_four_acc(&basics, &ratings, nb, nr, min_year, min_avg);
     let b_ms = t.elapsed().as_secs_f64() * 1e3;
     println!("Q1KB_B_one_thread_four_acc ms={b_ms:.1} count={} votes={} avg={:.6}", b.0, b.1, b.2 / b.0 as f64);
     println!("Q1KB_B_gain_x={:.3} (the mt_scan 1.40x fix, transplanted onto the Q1 path)", a_ms / b_ms);
 
     // ---- variant C: 4 threads, 4 sharded maps ----
     let t = Instant::now();
-    let c = variant_sharded(&basics, &ratings, nb, nr, THREADS);
+    let c = variant_sharded(&basics, &ratings, nb, nr, threads, min_year, min_avg);
     let c_ms = t.elapsed().as_secs_f64() * 1e3;
-    println!("Q1KB_C_{THREADS}_threads_sharded_maps ms={c_ms:.1} count={} votes={} avg={:.6}", c.0, c.1, c.2 / c.0 as f64);
+    println!("Q1KB_C_{threads}_threads_sharded_maps ms={c_ms:.1} count={} votes={} avg={:.6}", c.0, c.1, c.2 / c.0 as f64);
     println!("Q1KB_C_gain_x={:.3}", a_ms / c_ms);
 
     // ---- variant D: the answer fiber ----
     let t = Instant::now();
-    let d = variant_answer_fiber(&basics, &ratings, nb, nr);
+    let d = variant_answer_fiber(&basics, &ratings, nb, nr, min_year, min_avg);
     let d_total_ms = t.elapsed().as_secs_f64() * 1e3;
     println!("Q1KB_D_answer_fiber_total_ms={d_total_ms:.3} count={} votes={} avg={:.6}", d.0, d.1, d.2 / d.0 as f64);
 
     // ---- the build price of the answer fiber, on its own ----
-    let build_ms = answer_fiber_build_ms(&basics, &ratings, nb, nr);
+    let build_ms = answer_fiber_build_ms(&basics, &ratings, nb, nr, min_year, min_avg);
     println!(
         "Q1KB_E_answer_fiber_build_ms={build_ms:.1} (the price paid once, replacing the query)"
     );
@@ -97,7 +101,7 @@ fn main() {
 }
 
 /// The current production shape: one map, one accumulator, one thread.
-fn variant_one(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, accs: usize) -> Res {
+fn variant_one(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, accs: usize, min_year: i32, min_avg: f32) -> Res {
     let mut rat: HashMap<u64, (f32, i64)> = HashMap::with_capacity(nr);
     for i in 0..nr {
         rat.insert(
@@ -114,11 +118,11 @@ fn variant_one(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, accs: usize)
             let id = basics_id(basics, i);
             let yr = basics_year(basics, i);
             let fl = basics_flags(basics, i);
-            if fl & 1 == 0 || yr < MIN_YEAR {
+            if fl & 1 == 0 || yr < min_year {
                 continue;
             }
             if let Some(&(avg, votes)) = rat.get(&id) {
-                if avg >= MIN_AVG {
+                if avg >= min_avg {
                     c1 += 1;
                     v1 += votes;
                     s += avg as f64;
@@ -131,7 +135,7 @@ fn variant_one(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, accs: usize)
 }
 
 /// The mt_scan fix transplanted: four independent accumulator chains.
-fn variant_four_acc(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> Res {
+fn variant_four_acc(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, min_year: i32, min_avg: f32) -> Res {
     let mut rat: HashMap<u64, (f32, i64)> = HashMap::with_capacity(nr);
     for i in 0..nr {
         rat.insert(
@@ -146,11 +150,11 @@ fn variant_four_acc(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> Res 
         let id = basics_id(basics, i);
         let yr = basics_year(basics, i);
         let fl = basics_flags(basics, i);
-        if fl & 1 == 0 || yr < MIN_YEAR {
+        if fl & 1 == 0 || yr < min_year {
             continue;
         }
         if let Some(&(avg, votes)) = rat.get(&id) {
-            if avg >= MIN_AVG {
+            if avg >= min_avg {
                 c1 += 1;
                 v1 += votes;
                 s[i & 3] += avg as f64;
@@ -163,7 +167,7 @@ fn variant_four_acc(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> Res 
 /// The structural change: the rating map is sharded by id, and the basics
 /// rows are routed to the shard that owns their id. Each thread owns one
 /// shard, so no map is shared and no lock is taken.
-fn variant_sharded(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, threads: usize) -> Res {
+fn variant_sharded(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, threads: usize, min_year: i32, min_avg: f32) -> Res {
     // Partition the rating rows and the basics rows by shard, ONCE, in a
     // sequential pass. Each thread then owns one shard of both, so no map
     // is shared and no thread scans the other's rows.
@@ -200,11 +204,11 @@ fn variant_sharded(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, threads:
                     let id = basics_id(basics, i);
                     let yr = basics_year(basics, i);
                     let fl = basics_flags(basics, i);
-                    if fl & 1 == 0 || yr < MIN_YEAR {
+                    if fl & 1 == 0 || yr < min_year {
                         continue;
                     }
                     if let Some(&(avg, votes)) = rat.get(&id) {
-                        if avg >= MIN_AVG {
+                        if avg >= min_avg {
                             c1 += 1;
                             v1 += votes;
                             sums[(i >> 3) & 3] += avg as f64;
@@ -227,7 +231,7 @@ fn variant_sharded(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, threads:
 /// The floor: the answer is already materialised, so the query reads 44,906
 /// rows and touches nothing else. The build is timed separately, because
 /// the build is paid once and the query is paid per run.
-fn variant_answer_fiber(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> Res {
+fn variant_answer_fiber(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, min_year: i32, min_avg: f32) -> Res {
     let mut rat: HashMap<u64, (f32, i64)> = HashMap::with_capacity(nr);
     for i in 0..nr {
         rat.insert(
@@ -242,11 +246,11 @@ fn variant_answer_fiber(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> 
         let id = basics_id(basics, i);
         let yr = basics_year(basics, i);
         let fl = basics_flags(basics, i);
-        if fl & 1 == 0 || yr < MIN_YEAR {
+        if fl & 1 == 0 || yr < min_year {
             continue;
         }
         if let Some(&(avg, votes)) = rat.get(&id) {
-            if avg >= MIN_AVG {
+            if avg >= min_avg {
                 keep.push((id, avg, votes));
             }
         }
@@ -272,7 +276,7 @@ fn variant_answer_fiber(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> 
 
 /// The build step of the answer fiber, timed on its own. This is the price
 /// paid once, and it replaces the query that runs every time.
-pub fn answer_fiber_build_ms(basics: &[u8], ratings: &[u8], nb: usize, nr: usize) -> f64 {
+pub fn answer_fiber_build_ms(basics: &[u8], ratings: &[u8], nb: usize, nr: usize, min_year: i32, min_avg: f32) -> f64 {
     let mut rat: HashMap<u64, (f32, i64)> = HashMap::with_capacity(nr);
     for i in 0..nr {
         rat.insert(
@@ -286,11 +290,11 @@ pub fn answer_fiber_build_ms(basics: &[u8], ratings: &[u8], nb: usize, nr: usize
         let id = basics_id(basics, i);
         let yr = basics_year(basics, i);
         let fl = basics_flags(basics, i);
-        if fl & 1 == 0 || yr < MIN_YEAR {
+        if fl & 1 == 0 || yr < min_year {
             continue;
         }
         if let Some(&(avg, votes)) = rat.get(&id) {
-            if avg >= MIN_AVG {
+            if avg >= min_avg {
                 n += 1;
                 std::hint::black_box((avg, votes));
             }

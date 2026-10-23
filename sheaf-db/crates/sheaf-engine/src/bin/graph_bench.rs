@@ -9,9 +9,13 @@ use std::time::Instant;
 
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 
-const DIR: &str = r"D:\bench\data\neo4j\import";
+#[path = "shared/bench_args.rs"]
+mod bench_args;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let dir = bench_args::required_path(&args, "--dir");
+
     // ---- Load (untimed, reported): nodes + edges into BCSF ----
     let t0 = Instant::now();
     let mut builder = BcsfBuilder::new();
@@ -21,7 +25,7 @@ fn main() {
     let mut placed: Vec<(usize, usize)> = Vec::with_capacity(1_500_000);
     let mut contains: Vec<(usize, usize)> = Vec::with_capacity(600_000);
 
-    let content = std::fs::read(format!("{DIR}\\cust.csv")).unwrap();
+    let content = std::fs::read(format!("{dir}\\cust.csv")).unwrap();
     for line in content.split(|&b| b == b'\n').skip(1) {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
@@ -36,7 +40,7 @@ fn main() {
         g += 1;
         builder.push(0, Vec::new(), &db, &[0.0], &[]);
     }
-    let content = std::fs::read(format!("{DIR}\\ord.csv")).unwrap();
+    let content = std::fs::read(format!("{dir}\\ord.csv")).unwrap();
     for line in content.split(|&b| b == b'\n').skip(1) {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
@@ -51,7 +55,7 @@ fn main() {
         g += 1;
         builder.push(0, Vec::new(), &db, &[0.0], &[]);
     }
-    let content = std::fs::read(format!("{DIR}\\line.csv")).unwrap();
+    let content = std::fs::read(format!("{dir}\\line.csv")).unwrap();
     for line in content.split(|&b| b == b'\n').skip(1) {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
@@ -71,7 +75,7 @@ fn main() {
         g += 1;
         builder.push(0, Vec::new(), &db, &[price], &[]);
     }
-    let content = std::fs::read(format!("{DIR}\\placed.csv")).unwrap();
+    let content = std::fs::read(format!("{dir}\\placed.csv")).unwrap();
     for line in content.split(|&b| b == b'\n').skip(1) {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
@@ -89,7 +93,7 @@ fn main() {
             g += 1;
         }
     }
-    let content = std::fs::read(format!("{DIR}\\contains.csv")).unwrap();
+    let content = std::fs::read(format!("{dir}\\contains.csv")).unwrap();
     for line in content.split(|&b| b == b'\n').skip(1) {
         let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {

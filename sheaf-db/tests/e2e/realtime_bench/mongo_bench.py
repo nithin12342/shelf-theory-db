@@ -9,7 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pymongo import ASCENDING, MongoClient
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\mongodb.json"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "mongodb.json")
 SEED = 42
 N = 100_000
 

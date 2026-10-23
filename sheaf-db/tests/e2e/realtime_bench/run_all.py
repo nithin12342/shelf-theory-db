@@ -2,6 +2,11 @@
 
 Usage: py run_all.py [--engines sqlite,duckdb,pg] [--fresh] [--keep-up]
                      [--no-shelf] [--shelf-only]
+                     [--data DIR] [--build DIR] [--datasets DIR] [--imdb DIR]
+                     [--pg-app DIR] [--mariadb-app DIR] [--redis-server EXE]
+                     [--mongod EXE] [--pgbench-data DIR]
+The roots come from ~/.sheaf_bench.json, or from the flags above. The
+repository holds no absolute path.
 --fresh: delete sqlite/duckdb DB files first (true reload; default reuses =
   fast). --keep-up: leave servers running after. Results merge into existing
   JSONs as runN_dated entries (history preserved, never clobbered).
@@ -15,14 +20,23 @@ import subprocess
 import sys
 import time
 
+import bench_paths as P
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-RES = os.path.join(HERE, "results")
+RES = str(P.RESULTS)
 IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
-MARIADB = r"D:\bench\scoop\apps\mariadb\current\bin\mysqld.exe"
-PGCTL = r"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe"
-MONGOD = r"D:\bench\scoop\shims\mongod.exe"
-REDIS_SRV = r"D:\bench\apps\redis\redis-server.exe"
+
+def set_roots(a):
+    """Write the CLI roots into the environment for every child process."""
+    for attr, env in (("data", "SHEAF_DATA"), ("build", "SHEAF_BUILD"),
+                      ("datasets", "SHEAF_DATASETS"), ("imdb", "SHEAF_IMDB"),
+                      ("pg_app", "SHEAF_PG_APP"), ("mariadb_app", "SHEAF_MARIADB_APP"),
+                      ("redis_server", "SHEAF_REDIS_SERVER"), ("mongod", "SHEAF_MONGOD"),
+                      ("pgbench_data", "SHEAF_PGBENCH_DATA")):
+        value = getattr(a, attr)
+        if value:
+            os.environ[env] = value
 
 
 def stamp():
@@ -62,50 +76,72 @@ def sh(cmd, timeout=3600):
                           cwd=HERE, timeout=timeout)
 
 
-ENGINES = {
-    "sqlite": {"bench": "py sqlite_bench.py", "json": "sqlite.json"},
-    "duckdb": {"bench": "py duckdb_bench.py", "json": "duckdb.json"},
-    "redis": {"bench": "py redis_bench.py", "json": "redis.json",
-              "pexec": [r"D:\bench\apps\redis\redis-server.exe", "--dir", r"D:\bench\data\redis",
-                        "--maxmemory", "4gb", "--maxmemory-policy", "noeviction", "--port", "6379"],
-              "port": 6379, "wait": 30, "stop_im": "redis-server.exe"},
-    # MongoDB (document store) was UNINSTALLED on 2026-10-20: its $lookup
-    # join over the IMDb data measured 183,618.6 ms vs ShelfDB's 142.7 ms
-    # (1,287x) — the document-store join path is the wrong NoSQL opponent
-    # for this workload. ScyllaDB (CQL, wide-column) takes the NoSQL slot:
-    # it moves the join to write time and answers the same numbers from a
-    # clustering-range scan. See imdb_scylla_bench.py.
-    "scylladb": {"bench": "py scylla_bench.py", "json": "scylladb.json",
-                 "start": "docker start bench-scylla", "port": 9042, "wait": 220, "ready_wait": 150,
-                 "stop_cmd": "docker stop bench-scylla"},
-    "mariadb": {"bench": "py sql_bench.py mariadb", "json": "mariadb.json",
-                "pexec": [r"D:\bench\scoop\apps\mariadb\current\bin\mysqld.exe",
-                          "--datadir=D:\\bench\\data\\mariadb", "--port=3307",
-                          "--innodb-buffer-pool-size=2G", "--console"],
-                "port": 3307, "wait": 60, "stop_im": "mysqld.exe"},
-    "pg": {"bench": "py sql_bench.py pg", "json": "pg.json",
-           "pexec": [r"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe", "-D", r"D:\bench\data\pgsql",
-                     "-o", "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on",
-                     "-l", r"D:\bench\data\pgsql\logfile", "start"],
-           "port": 5433, "wait": 180,
-           "ready_poll": r'"D:\bench\scoop\apps\postgresql\current\bin\pg_isready.exe" -h 127.0.0.1 -p 5433',
-           "stop_cmd": r'"D:\bench\scoop\apps\postgresql\current\bin\pg_ctl.exe" -D "D:\bench\data\pgsql" stop'},
-    "neo4j": {"bench": "py neo4j_bench.py", "json": "neo4j.json",
-              "start": "docker start bench-neo4j", "port": 7687, "wait": 150, "ready_wait": 75,
-              "stop_cmd": "docker stop bench-neo4j"},
-    "scylladb": {"bench": "py scylla_bench.py", "json": "scylladb.json",
-                 "start": "docker start bench-scylla", "port": 9042, "wait": 220, "ready_wait": 150,
-                 "stop_cmd": "docker stop bench-scylla"},
-}
+# MongoDB (document store) was uninstalled on 2026-10-20: its $lookup join
+# over the IMDb data measured 183,618.6 ms against ShelfDB's 142.7 ms
+# (1,287x). ScyllaDB (CQL, wide-column) takes the NoSQL slot: it moves the
+# join to write time and answers from a clustering-range scan.
+def engines():
+    """The engine matrix. Every path comes from the bench roots."""
+    return {
+        "sqlite": {"bench": "py sqlite_bench.py", "json": "sqlite.json"},
+        "duckdb": {"bench": "py duckdb_bench.py", "json": "duckdb.json"},
+        "redis": {"bench": "py redis_bench.py", "json": "redis.json",
+                  "pexec": [P.redis_server(), "--dir", P.data("redis"),
+                            "--maxmemory", "4gb", "--maxmemory-policy", "noeviction",
+                            "--port", "6379"],
+                  "port": 6379, "wait": 30, "stop_im": "redis-server.exe"},
+        "scylladb": {"bench": "py scylla_bench.py", "json": "scylladb.json",
+                     "start": "docker start bench-scylla", "port": 9042, "wait": 220,
+                     "ready_wait": 150, "stop_cmd": "docker stop bench-scylla"},
+        "mariadb": {"bench": "py sql_bench.py mariadb", "json": "mariadb.json",
+                    "pexec": [P.mariadb_app("mysqld.exe"),
+                              "--datadir=" + P.data("mariadb"), "--port=3307",
+                              "--innodb-buffer-pool-size=2G", "--console"],
+                    "port": 3307, "wait": 60, "stop_im": "mysqld.exe"},
+        "pg": {"bench": "py sql_bench.py pg", "json": "pg.json",
+               "pexec": [P.pg_app("pg_ctl.exe"), "-D", P.data("pgsql"),
+                         "-o", "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on",
+                         "-l", P.data("pgsql", "logfile"), "start"],
+               "port": 5433, "wait": 180,
+               "ready_poll": f'"{P.pg_app("pg_isready.exe")}" -h 127.0.0.1 -p 5433',
+               "stop_cmd": f'"{P.pg_app("pg_ctl.exe")}" -D "{P.data("pgsql")}" stop'},
+        "neo4j": {"bench": "py neo4j_bench.py", "json": "neo4j.json",
+                  "start": "docker start bench-neo4j", "port": 7687, "wait": 150,
+                  "ready_wait": 75, "stop_cmd": "docker stop bench-neo4j"},
+    }
+
+
 ORDER = ["sqlite", "duckdb", "redis", "mariadb", "pg", "neo4j", "scylladb"]
 
-SHELF_BINS = [("sheaf-engine", "tpch_scan_bench"), ("sheaf-engine", "fused_scan_bench"),
-              ("sheaf-engine", "fiber_join_bench"), ("sheaf-engine", "fiber_snap_bench"),
-              ("sheaf-engine", "range_slice_bench"), ("sheaf-engine", "graph_bench"),
-              ("sheaf-engine", "mt_bench"),
-              ("sheaf-storage", "wal_insert_bench"), ("sheaf-engine", "epoch_wal_bench"),
-              ("sheaf-engine", "p0_gates_bench"),
-              ("sheaf-engine", "real_load_bench")]
+
+def shelf_bins():
+    """The shelf binaries and the data paths each one needs."""
+    tpch = P.build("tpch-dbgen")
+    lineitem = P.build("tpch-dbgen", "lineitem.tbl")
+    snap = P.data("fiber_snapshot.bin")
+    snap_bad = P.data("fiber_snapshot.bad")
+    return [
+        ("sheaf-engine", "tpch_scan_bench", [f"--lineitem={lineitem}"]),
+        ("sheaf-engine", "fused_scan_bench", [f"--lineitem={lineitem}"]),
+        ("sheaf-engine", "fiber_join_bench", [f"--dir={tpch}", f"--snap={snap}"]),
+        ("sheaf-engine", "fiber_snap_bench",
+         [f"--dir={tpch}", f"--snap={snap}", f"--snap-bad={snap_bad}"]),
+        ("sheaf-engine", "range_slice_bench", []),
+        ("sheaf-engine", "graph_bench", [f"--dir={P.data('neo4j', 'import')}"]),
+        ("sheaf-engine", "mt_bench", []),
+        ("sheaf-storage", "wal_insert_bench", []),
+        ("sheaf-engine", "epoch_wal_bench", []),
+        ("sheaf-engine", "p0_gates_bench", []),
+        ("sheaf-engine", "real_load_bench",
+         [f"--fraud={P.datasets('ieee-fraud', 'train_transaction.csv')}",
+          f"--fb={P.datasets('facebook_combined.txt')}"]),
+        ("sheaf-engine", "imdb_fiber_bench",
+         [f"--imdb-dir={P.imdb()}",
+          f"--bundle={P.data('imdb_fiber_bundle.bin')}",
+          f"--baseline={P.RESULTS / 'imdb_job.json'}",
+          f"--output={P.RESULTS / 'imdb_shelf.json'}"]),
+    ]
+
 
 HEADLINES = {"sqlite.json": ("join_ms", "scan_agg_ms"), "duckdb.json": ("join_ms", "scan_agg_ms"),
              "redis.json": ("point_lookup_us", "lua_5key_us"), "mongodb.json": ("lookup4_indexed_ms", "mixed_32t"),
@@ -142,10 +178,21 @@ def main():
     ap.add_argument("--keep-up", action="store_true")
     ap.add_argument("--no-shelf", action="store_true")
     ap.add_argument("--shelf-only", action="store_true")
+    ap.add_argument("--data")
+    ap.add_argument("--build")
+    ap.add_argument("--datasets")
+    ap.add_argument("--imdb")
+    ap.add_argument("--pg-app")
+    ap.add_argument("--mariadb-app")
+    ap.add_argument("--redis-server")
+    ap.add_argument("--mongod")
+    ap.add_argument("--pgbench-data")
     a = ap.parse_args()
-    want = [e for e in a.engines.split(",") if e in ENGINES]
+    set_roots(a)
+    E = engines()
+    want = [e for e in a.engines.split(",") if e in E]
     if a.fresh:
-        for f in (r"D:\bench\data\sqlite\bench.db", r"D:\bench\data\duckdb\bench.duckdb"):
+        for f in (P.data("sqlite", "bench.db"), P.data("duckdb", "bench.duckdb")):
             if os.path.exists(f):
                 os.remove(f)
                 print(f"fresh: deleted {f}")
@@ -158,7 +205,7 @@ def main():
         for name in ORDER:
             if name not in want:
                 continue
-            e = ENGINES[name]
+            e = E[name]
             print(f"\n===== {name} =====")
             if name in ("neo4j", "scylladb") and not have_docker:
                 print(f"{name}: SKIP (docker daemon down)"); summary[name] = "SKIP-NO-DOCKER"; continue
@@ -200,15 +247,22 @@ def main():
                 summary[name] = f"MERGE-FAIL {ex}"
     if not a.no_shelf:
         print("\n===== shelf-db bins =====")
-        sh("cargo build --manifest-path D:\\d2\\sheaf-db\\Cargo.toml --release --bins -p sheaf-engine -p sheaf-storage")
-        for crate, b in SHELF_BINS:
-            r = sh(f"cargo run --manifest-path D:\\d2\\sheaf-db\\Cargo.toml -p {crate} --bin {b} --release")
+        manifest = str(P.SHEAF_DB / "Cargo.toml")
+        subprocess.run(["cargo", "build", "--manifest-path", manifest, "--release",
+                        "--bins", "-p", "sheaf-engine", "-p", "sheaf-storage"],
+                       cwd=HERE, timeout=3600)
+        for crate, b, extra in shelf_bins():
+            cmd = ["cargo", "run", "--manifest-path", manifest, "-p", crate,
+                   "--bin", b, "--release", "--"] + extra
+            r = subprocess.run(cmd, capture_output=True, text=True, cwd=HERE, timeout=3600)
             out = (r.stdout or "")[-300:]
             print(f"-- {b}: {out.strip().splitlines()[-1] if out.strip() else 'FAIL'}")
             summary[f"shelf:{b}"] = "OK" if r.returncode == 0 else "FAIL"
+            if r.returncode != 0:
+                print((r.stderr or "")[-400:])
     if not a.keep_up:
         for name in started:
-            e = ENGINES[name]
+            e = E[name]
             if e.get("stop_im"):
                 sh(f'taskkill /F /IM {e["stop_im"]} >nul 2>&1')
             elif e.get("stop_cmd"):
@@ -219,9 +273,9 @@ def main():
         if name not in want:
             continue
         try:
-            d = json.load(open(os.path.join(RES, ENGINES[name]["json"])))
+            d = json.load(open(os.path.join(RES, E[name]["json"])))
             rk = [k for k in d if k.startswith("run")][-1]
-            cols = HEADLINES[ENGINES[name]["json"]]
+            cols = HEADLINES[E[name]["json"]]
             vals = {c: (d[rk].get(c, {}).get("p50", d[rk].get(c, {}).get("ms", d[rk].get(c)))) for c in cols}
             print(f"{name} [{rk}]: {vals}")
         except Exception as ex:

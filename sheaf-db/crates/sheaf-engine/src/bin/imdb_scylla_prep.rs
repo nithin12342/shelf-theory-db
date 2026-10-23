@@ -3,7 +3,7 @@
 // basics + 1.7M ratings); doing it in Rust keeps the Python side to a thin
 // CQL transport (insert + query), per the "Rust first" directive.
 //
-// Output: D:\bench\data\imdb_scylla_rows.bin
+// Output: the path given by --out
 //   [MAGIC u64][count u64] then count x (title_id u64, year i32, avg f32, votes i64)
 // Rows: movies with year >= MIN_YEAR that have a rating. The query's
 // avg >= MIN_AVG filter is NOT applied here — it stays a query-time
@@ -11,8 +11,6 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-const IMDB: &str = r"D:\d2\data\imdb";
-const OUT: &str = r"D:\bench\data\imdb_scylla_rows.bin";
 const MIN_YEAR: i32 = 2000;
 const MAGIC: u64 = 0x5343_594C_524F_5753; // "SCYLROWS"
 
@@ -24,10 +22,17 @@ fn id_of(b: &[u8]) -> Option<u64> {
     std::str::from_utf8(&b[2..]).ok()?.parse().ok()
 }
 
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let imdb = bench_args::required_path(&args, "--imdb");
+    let out_path = bench_args::required_path(&args, "--out");
+
     // --- ratings into a hash (1.7M) ---
     let t0 = Instant::now();
-    let content = std::fs::read(format!("{IMDB}\\title.ratings.tsv")).expect("ratings tsv");
+    let content = std::fs::read(format!("{imdb}\\title.ratings.tsv")).expect("ratings tsv");
     let mut ratings: HashMap<u64, (f32, i64)> = HashMap::with_capacity(1_800_000);
     let mut start = 0usize;
     let mut first = true;
@@ -72,7 +77,7 @@ fn main() {
 
     // --- stream basics, join, emit ---
     let t0 = Instant::now();
-    let content = std::fs::read(format!("{IMDB}\\title.basics.tsv")).expect("basics tsv");
+    let content = std::fs::read(format!("{imdb}\\title.basics.tsv")).expect("basics tsv");
     let mut out: Vec<u8> = Vec::with_capacity(64 << 20);
     out.extend_from_slice(&MAGIC.to_le_bytes());
     out.extend_from_slice(&0u64.to_le_bytes());
@@ -127,10 +132,10 @@ fn main() {
         }
     }
     out[8..16].copy_from_slice(&count.to_le_bytes());
-    std::fs::write(OUT, &out).expect("write rows");
+    std::fs::write(&out_path, &out).expect("write rows");
     let join_ms = t0.elapsed().as_secs_f64() * 1e3;
     println!(
-        "imdb_scylla_prep: rows={count} bytes={} ratings_load_ms={ratings_load_ms:.0} join_emit_ms={join_ms:.0} out={OUT}",
+        "imdb_scylla_prep: rows={count} bytes={} ratings_load_ms={ratings_load_ms:.0} join_emit_ms={join_ms:.0} out={out_path}",
         out.len()
     );
 }

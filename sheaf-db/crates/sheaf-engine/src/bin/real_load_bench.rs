@@ -9,12 +9,17 @@ use std::time::Instant;
 
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 
-const FRAUD: &str = r"D:\bench\datasets\ieee-fraud\train_transaction.csv";
+#[path = "shared/bench_args.rs"]
+mod bench_args;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let fraud = bench_args::required_path(&args, "--fraud");
+    let fb = bench_args::required_path(&args, "--fb");
+
     // ---- Fraud: TransactionID(0), isFraud(1), TransactionAmt(3), ProductCD(4) ----
     let t0 = Instant::now();
-    let content = std::fs::read(FRAUD).expect("train_transaction.csv missing");
+    let content = std::fs::read(&fraud).expect("train_transaction.csv missing");
     let mut builder = BcsfBuilder::new();
     let db = [0u8; 16];
     let mut n = 0usize;
@@ -99,11 +104,16 @@ fn main() {
     let mut nedges = 0usize;
     // NOTE: .gz read needs flate2 (not a dep) — read the pre-extracted file
     // (see FB archive); report SKIP if absent. Keeps zero-dep invariant.
-    let fb_path = r"D:\bench\datasets\facebook_combined.txt";
+    let fb_path = &fb;
     let content = match std::fs::read(fb_path) {
+        Ok(c) if c.starts_with(&[0x1f, 0x8b]) => {
+            println!("fb_skip: the input is gzip; pass the extracted facebook_combined.txt");
+            println!("gate_fb=SKIP (data not extracted)");
+            return;
+        }
         Ok(c) => c,
         Err(_) => {
-            println!("fb_skip: extract facebook_combined.txt.gz to D:\\bench\\datasets\\ first");
+            println!("fb_skip: extract facebook_combined.txt.gz into the datasets root first");
             println!("gate_fb=SKIP (data not extracted)");
             return;
         }

@@ -4,7 +4,9 @@ import time
 
 from pymongo import ASCENDING, MongoClient
 
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\mongodb.json"
+import bench_paths as P
+
+OUT = str(P.RESULTS / "mongodb.json")
 
 cli = MongoClient("127.0.0.1", 27017)
 db = cli.bench

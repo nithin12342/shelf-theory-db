@@ -1,5 +1,5 @@
 """DuckDB E2E bench: load TPC-H SF1, run timed queries, emit results JSON.
-Usage: py duckdb_bench.py   (requires duckdb pip package; CLI at D:\\bench\\apps\\duckdb kept as fallback)
+Usage: py duckdb_bench.py   (requires the duckdb pip package)
 """
 import json
 import os
@@ -8,9 +8,11 @@ import time
 
 import duckdb
 
-DATA = r"D:\bench\build\tpch-dbgen"
-DB = r"D:\bench\data\duckdb\bench.duckdb"
-OUT = r"D:\d2\sheaf-db\tests\e2e\realtime_bench\results\duckdb.json"
+import bench_paths as P
+
+DATA = P.build("tpch-dbgen")
+DB = P.data("duckdb", "bench.duckdb")
+OUT = str(P.RESULTS / "duckdb.json")
 SEED = 42
 
 COLS = {
