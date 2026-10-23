@@ -19,6 +19,7 @@
 | 10 | TQL statistical cost model and selectivity engine implemented | `sheaf-query/src/ir/optimizer.rs`, `phase5_bench.rs`, `tests/e2e/phase5_opt/` | Implemented HypercellStats, CostModel, estimate_selectivity, and optimize_with_cost. 4 unit tests in sheaf-query pass. gate_statistical_optimizer passes in phase5_bench. REQ-061 / SPEC-061 and METHOD-071 / METHOD-072 recorded |
 | 11 | TQL optimizer evaluated on seven-database benchmark workloads | `sheaf-engine/src/bin/tql_seven_db_bench.rs` | Evaluated IMDb JOB Q4 (5.29x gain), Fraud 2-hop graph traversal (4.88x gain), TPC-H SF1 analytical filter (2.71x gain), and Key-Value point lookup (9.17x gain). REQ-062 / SPEC-062 and METHOD-073 recorded |
 | 12 | Full seven-database live matrix benchmark and loss documentation | `LIVE_SEVEN_DATABASE_BENCHMARK_AND_LOSSES_2026-10-23.md`, `results/*.json` | Executed live tests against all seven databases: DuckDB, SQLite, Redis, ScyllaDB, Neo4j, MariaDB, PostgreSQL, and ShelfDB. Documented 4 losses (SQLite insert, DuckDB raw join, unfused scan, initial load time). METHOD-074 recorded |
+| 13 | Comprehensive technical loss analysis document created | `DETAILED_LOSS_ANALYSIS_2026-10-23.md` | Detailed architectural causes and engineering verdicts for all four loss categories: SQLite durable writes, DuckDB raw joins, unfused scans, and build time. METHOD-075 recorded |
 
 ## Measured results this session
 
@@ -34,6 +35,7 @@
 | TQL statistical cost optimizer | 4 unit tests pass in sheaf-query. `gate_statistical_optimizer=PASS` and `PHASE5 E2E: PASS` | PASS |
 | TQL seven-database workload evaluation | Efficiency gains: JOB 5.29x, Graph 4.88x, TPC-H 2.71x, KV 9.17x. `TQL-SEVEN-DB-BENCH: ALL PASS` | PASS |
 | Seven-database live matrix benchmark | Full matrix executed against DuckDB, SQLite, Redis, ScyllaDB, Neo4j, MariaDB, and PostgreSQL | PASS |
+| Detailed technical loss document | `DETAILED_LOSS_ANALYSIS_2026-10-23.md` verified and linked to evidence | PASS |
 
 ## Decision recorded
 
@@ -49,4 +51,6 @@
 
 **Document every loss honestly.** ShelfDB lost to SQLite on single durable writes (1.7 us vs 6.9 us, 4.06x slower) and lost to DuckDB on raw un-indexed joins (205 ms vs 2500 ms, 12.2x slower). All 4 loss categories are recorded in `LIVE_SEVEN_DATABASE_BENCHMARK_AND_LOSSES_2026-10-23.md`.
 
-**Record generated:** 2026-10-23 17:38:00 local (Asia/Kolkata), 2026-10-23 12:08:00 UTC.
+**State the technical causes for every loss.** `DETAILED_LOSS_ANALYSIS_2026-10-23.md` explains the hardware and algorithmic reasons why ShelfDB loses to SQLite on single-row durability and DuckDB on raw joins. It defines the permanent trade-offs and engineering boundaries.
+
+**Record generated:** 2026-10-23 17:52:00 local (Asia/Kolkata), 2026-10-23 12:22:00 UTC.
