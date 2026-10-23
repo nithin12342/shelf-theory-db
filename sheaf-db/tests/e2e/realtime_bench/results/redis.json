@@ -65,7 +65,7 @@
     },
     "note": "run4 rerun, same harness+flags. Reproduces run3 (92 vs 98us)."
   },
-  "note": "14 runs; latest run14_20261023.",
+  "note": "15 runs; latest run15_20261023.",
   "run5_20261014": {
     "redis_version": "5.0.14.1",
     "load_s": 27.3,
@@ -235,5 +235,22 @@
       "n": 2000
     },
     "note": "runner 2026-10-23 13:04 UTC+05:30"
+  },
+  "run15_20261023": {
+    "redis_version": "5.0.14.1",
+    "load_s": 22.6,
+    "dbsize": 1000000,
+    "used_memory_mb": 121.0,
+    "point_lookup_us": {
+      "p50": 131.3,
+      "p99": 372.2,
+      "n": 20000
+    },
+    "lua_5key_us": {
+      "p50": 156.8,
+      "p99": 467.9,
+      "n": 2000
+    },
+    "note": "runner 2026-10-23 17:28 UTC+05:30"
   }
 }

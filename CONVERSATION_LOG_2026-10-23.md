@@ -18,6 +18,7 @@
 | 9 | Operational plan created for TQL statistical cost optimizer | `TQL_COST_OPTIMIZER_PLAN_2026-10-23.md` | Formal operational plan created for unified TQL statistical optimization, cost formulas, and fiber bridge |
 | 10 | TQL statistical cost model and selectivity engine implemented | `sheaf-query/src/ir/optimizer.rs`, `phase5_bench.rs`, `tests/e2e/phase5_opt/` | Implemented HypercellStats, CostModel, estimate_selectivity, and optimize_with_cost. 4 unit tests in sheaf-query pass. gate_statistical_optimizer passes in phase5_bench. REQ-061 / SPEC-061 and METHOD-071 / METHOD-072 recorded |
 | 11 | TQL optimizer evaluated on seven-database benchmark workloads | `sheaf-engine/src/bin/tql_seven_db_bench.rs` | Evaluated IMDb JOB Q4 (5.29x gain), Fraud 2-hop graph traversal (4.88x gain), TPC-H SF1 analytical filter (2.71x gain), and Key-Value point lookup (9.17x gain). REQ-062 / SPEC-062 and METHOD-073 recorded |
+| 12 | Full seven-database live matrix benchmark and loss documentation | `LIVE_SEVEN_DATABASE_BENCHMARK_AND_LOSSES_2026-10-23.md`, `results/*.json` | Executed live tests against all seven databases: DuckDB, SQLite, Redis, ScyllaDB, Neo4j, MariaDB, PostgreSQL, and ShelfDB. Documented 4 losses (SQLite insert, DuckDB raw join, unfused scan, initial load time). METHOD-074 recorded |
 
 ## Measured results this session
 
@@ -32,6 +33,7 @@
 | Complex JOB Q4 5-table join order query | ShelfDB 600.8 ms query (834.6 ms load) vs DuckDB 1058.3 ms query. Exact top-10 match (`gate_q4_exact=PASS`) | PASS |
 | TQL statistical cost optimizer | 4 unit tests pass in sheaf-query. `gate_statistical_optimizer=PASS` and `PHASE5 E2E: PASS` | PASS |
 | TQL seven-database workload evaluation | Efficiency gains: JOB 5.29x, Graph 4.88x, TPC-H 2.71x, KV 9.17x. `TQL-SEVEN-DB-BENCH: ALL PASS` | PASS |
+| Seven-database live matrix benchmark | Full matrix executed against DuckDB, SQLite, Redis, ScyllaDB, Neo4j, MariaDB, and PostgreSQL | PASS |
 
 ## Decision recorded
 
@@ -45,4 +47,6 @@
 
 **Topological queries reflect cell complex data structures.** Queries in TQL represent subcomplex matching over cell boundaries rather than SQL relational Cartesian products or Neo4j pointer-hopping paths. The optimizer uses topological boundary incidence to eliminate Cartesian fanout and achieve 2.71x to 9.17x planning efficiency gains.
 
-**Record generated:** 2026-10-23 16:52:00 local (Asia/Kolkata), 2026-10-23 11:22:00 UTC.
+**Document every loss honestly.** ShelfDB lost to SQLite on single durable writes (1.7 us vs 6.9 us, 4.06x slower) and lost to DuckDB on raw un-indexed joins (205 ms vs 2500 ms, 12.2x slower). All 4 loss categories are recorded in `LIVE_SEVEN_DATABASE_BENCHMARK_AND_LOSSES_2026-10-23.md`.
+
+**Record generated:** 2026-10-23 17:38:00 local (Asia/Kolkata), 2026-10-23 12:08:00 UTC.
