@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use sheaf_query::ir::optimizer::{
-    explain, explain_costed, optimize_with_cost, prune_plan, CostModel, HypercellStats,
+    explain, explain_costed, optimize_with_cost, prune_plan, HypercellStats,
 };
 use sheaf_query::ir::tir::lower_query;
 use sheaf_query::ir::validator::{check_coboundary_ortho, check_eulerian_delta2, validate_program};
@@ -14,6 +14,11 @@ use sheaf_query::syntax::parser::parse_program;
 use sheaf_storage::bcsf::builder::BcsfBuilder;
 use sheaf_storage::bcsf::name_lookup::{extract_u64, NameIndex};
 use sheaf_storage::bcsf::reader::BcsfReader;
+
+#[path = "shared/bench_args.rs"]
+mod bench_args;
+#[path = "shared/bench_config.rs"]
+mod bench_config;
 
 const SCHEMA5: &str = r#"
 DEFINE CELL TYPE Account (dim: 0, discrete: { acct_id: u64, name: string, balance: u64 }, continuous: Float32[4]);
@@ -101,7 +106,11 @@ fn main() {
         total_rows: 500,
         ..Default::default()
     };
-    let model = CostModel::default();
+    let args: Vec<String> = std::env::args().collect();
+    let config_path = bench_args::value(&args, "--config")
+        .unwrap_or_else(bench_config::default_path);
+    let config = bench_config::load(&config_path);
+    let model = bench_config::cost_model(&config);
     let costed_plan = optimize_with_cost(&ops6, q6.overs.len(), &stats, &model);
     let costed_explain = explain_costed(&costed_plan);
     let cost_pass = costed_plan.total_cost > 0.0

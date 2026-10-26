@@ -25,23 +25,14 @@ pub struct PrunedPlan {
 }
 
 /// Cost model parameters for query planning.
+///
+/// The caller supplies the values from its configuration.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CostModel {
     pub io_cost_per_row: f64,
     pub cpu_cost_per_row: f64,
     pub probe_cost_per_slice: f64,
     pub solve_cost_per_dim: f64,
-}
-
-impl Default for CostModel {
-    fn default() -> Self {
-        Self {
-            io_cost_per_row: 1.0,
-            cpu_cost_per_row: 0.1,
-            probe_cost_per_slice: 0.5,
-            solve_cost_per_dim: 2.0,
-        }
-    }
 }
 
 /// Catalog and cardinality statistics for a hypercell type.
@@ -212,6 +203,15 @@ mod tests {
     use super::*;
     use crate::syntax::ast::Lit;
 
+    fn test_model() -> CostModel {
+        CostModel {
+            io_cost_per_row: 1.0,
+            cpu_cost_per_row: 0.1,
+            probe_cost_per_slice: 0.5,
+            solve_cost_per_dim: 2.0,
+        }
+    }
+
     #[test]
     fn test_poset_pruning_invariant() {
         let ops = vec![TirOp::BcsfScan { hyper_type: "Payment".into() }];
@@ -250,7 +250,7 @@ mod tests {
     fn test_cost_calculation_monotonicity() {
         let stats_small = HypercellStats { total_rows: 100, ..Default::default() };
         let stats_large = HypercellStats { total_rows: 10000, ..Default::default() };
-        let model = CostModel::default();
+        let model = test_model();
         let ops = vec![TirOp::BcsfScan { hyper_type: "Payment".into() }];
 
         let plan_small = optimize_with_cost(&ops, 3, &stats_small, &model);
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn test_explain_costed_output() {
         let stats = HypercellStats::default();
-        let model = CostModel::default();
+        let model = test_model();
         let ops = vec![TirOp::BcsfScan { hyper_type: "Payment".into() }];
         let costed = optimize_with_cost(&ops, 3, &stats, &model);
         let exp = explain_costed(&costed);

@@ -18,6 +18,7 @@ pub fn value(args: &[String], flag: &str) -> Option<String> {
 }
 
 /// A required path flag. Exits 2 with a clear message when absent.
+#[allow(dead_code)]
 pub fn required_path(args: &[String], flag: &str) -> String {
     match value(args, flag) {
         Some(v) if !v.is_empty() => v,
