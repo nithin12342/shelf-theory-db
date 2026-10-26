@@ -66,10 +66,13 @@ Each `REQ-###` maps to one `SPEC-###`. Acceptance criteria are the Turn-5/8 mile
 | REQ-060 | Complex Join Order Benchmark query Q4 (multi-attribute filter, 5-table join stress, aggregation) | Complex-JOB 2026-10-23 | SPEC-060 |
 | REQ-061 | TQL statistical cost optimizer (cardinality statistics, predicate selectivity, cost modeling) | TQL-Cost-Opt 2026-10-23 | SPEC-061 |
 | REQ-062 | TQL optimizer evaluation across the seven database benchmark query shapes | TQL-Seven-DB 2026-10-23 | SPEC-062 |
+| REQ-063 | Named benchmark inputs (service endpoints, credentials, TQL workload statistics, cost-model weights, Q4 thresholds) | Portability 2026-10-26 | SPEC-063 |
 
 ## SPEC details (acceptance = gate)
 
 - SPEC-062: four representative query shapes (IMDb JOB join, Fraud net 2-hop graph traversal, TPC-H analytical filter, Key-Value point lookup) must be expressed as valid TQL cellular subcomplex queries; the statistical cost optimizer must achieve > 1.5x efficiency gain over unoptimized execution for every query shape. Gate: tql_seven_db_bench prints TQL-SEVEN-DB-BENCH: ALL PASS; wc -l <= 500 across all files.
+
+- SPEC-063: every benchmark input value is a named input. The service endpoints and credentials come from the per-machine `~/.sheaf_bench.json` through `bench_paths.py`. The TQL workload statistics and the four cost-model weights come from `tests/e2e/realtime_bench/tql_workloads.conf` through `shared/bench_config.rs`. The Q4 thresholds are CLI flags with the JOB defaults. The document links are repository-relative. `CostModel` has no built-in default. Gate: `py -m compileall -q .` exits 0. The service load check reads the six service entries. `run_all.engines()` reads the five service-backed engines. `tql_seven_db_bench` prints `TQL-SEVEN-DB-BENCH: ALL PASS`. `phase5_bench` prints `PHASE5 E2E: PASS`. `cargo test -p sheaf-query` passes 4/4. Clippy exits 0 with `-D warnings`. The 500-line gate passes. The DIP audit passes.
 
 - SPEC-061: the TQL optimizer must compute statistical costs for scan, filter, join, and solve operators; predicate selectivity must follow distinct value distributions and comparison types; EXPLAIN output must render total cost and per-operator breakdowns alongside poset boundary pruning. Gate: unit tests in sheaf-query pass; gate_statistical_optimizer=PASS in phase5_bench; wc -l <= 500 across all files.
 
