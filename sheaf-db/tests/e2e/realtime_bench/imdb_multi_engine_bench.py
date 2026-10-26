@@ -36,11 +36,12 @@ RES = str(P.RESULTS)
 OUT = os.path.join(RES, "imdb_multi_engine.json")
 BASE = os.path.join(RES, "imdb_job.json")
 DDB = P.data("duckdb", "imdb.duckdb")
-MARIADB = {"host": "127.0.0.1", "port": 3307, "user": "root", "password": "benchpass",
-           "database": "imdb"}
-MONGO = "127.0.0.1:27017"
-SCYLLA = "127.0.0.1:9042"
-NEO4J = ("bolt://127.0.0.1:7687", "neo4j", "benchpass")
+_mariadb = P.service("mariadb")
+MARIADB = {"host": _mariadb.host, "port": _mariadb.port, "user": _mariadb.user,
+           "password": _mariadb.password, "database": "imdb"}
+MONGO = P.service("mongo").authority
+_neo4j = P.service("neo4j")
+NEO4J = (_neo4j.uri("bolt"), _neo4j.user, _neo4j.password)
 
 MIN_AVG = 7.5
 MIN_YEAR = 2000
@@ -189,7 +190,8 @@ def run_redis(titles, rat, joined, t):
     """Redis has no join: the Q1 truth set is denormalized into one hash at
     load time (Redis' idiom). The scan aggregation then reproduces the truth."""
     import redis as r
-    cli = r.Redis(host="127.0.0.1", port=6379)
+    redis_svc = P.service("redis")
+    cli = r.Redis(host=redis_svc.host, port=redis_svc.port)
     cli.flushdb()
     t0 = time.perf_counter()
     # One hash per column (Redis idiom): field = tconst.
@@ -238,7 +240,8 @@ def run_scylla(titles, rat, joined, t):
     """Wide-column: truth set denormalized into a by_year table (Scylla idiom:
     the join is resolved at write time, partition = year)."""
     from cassandra.cluster import Cluster
-    cl = Cluster(["127.0.0.1"], port=9042)
+    scylla = P.service("scylla")
+    cl = Cluster([scylla.host], port=scylla.port)
     deadline = time.time() + 240
     ses = None
     while time.time() < deadline:

@@ -1,5 +1,5 @@
 """Redis E2E bench: 1M KV pairs, point lookups, Lua consistency check.
-Usage: py redis_bench.py   (requires redis-server on 6379)
+Usage: py redis_bench.py   (requires the configured Redis server)
 """
 import json
 import os
@@ -22,7 +22,8 @@ def pct(times, p):
 
 def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    r = redis.Redis(host="127.0.0.1", port=6379, socket_timeout=60)
+    redis_svc = P.service("redis")
+    r = redis.Redis(host=redis_svc.host, port=redis_svc.port, socket_timeout=60)
     r.ping()
     res = {"redis_version": r.info()["redis_version"]}
     if r.dbsize() == NKEYS:

@@ -8,7 +8,8 @@ import psycopg
 import bench_paths as P
 
 DDB = P.data("duckdb", "imdb.duckdb")
-PG = {"host": "127.0.0.1", "port": 5433, "user": "postgres", "dbname": "imdb"}
+_pg = P.service("pg")
+PG = {"host": _pg.host, "port": _pg.port, "user": _pg.user, "dbname": "imdb"}
 
 con = duckdb.connect(DDB)
 pg = psycopg.connect(**PG, autocommit=True, connect_timeout=15)

@@ -17,7 +17,8 @@ import psycopg
 import bench_paths as P
 
 DDB = P.data("duckdb", "imdb.duckdb")
-PG = {"host": "127.0.0.1", "port": 5433, "user": "postgres", "dbname": "imdb"}
+_pg = P.service("pg")
+PG = {"host": _pg.host, "port": _pg.port, "user": _pg.user, "dbname": "imdb"}
 TABLES = ["title_basics", "title_akas", "title_crew", "title_episode",
           "title_principals", "title_ratings", "name_basics"]
 DDL = {
@@ -43,7 +44,7 @@ def main():
 
     con = duckdb.connect(DDB)
     con.execute("INSTALL postgres; LOAD postgres;")
-    con.execute(f"ATTACH 'postgresql://postgres@127.0.0.1:5433/imdb' AS pg (TYPE postgres)")
+    con.execute(f"ATTACH 'postgresql://{PG['user']}@{PG['host']}:{PG['port']}/imdb' AS pg (TYPE postgres)")
     for t in TABLES:
         t0 = time.perf_counter()
         con.execute(f"INSERT INTO pg.{t} SELECT * FROM {t}")

@@ -1,5 +1,5 @@
 """Neo4j E2E bench: point lookups, 2-hop traversals, deep paths. Emits JSON.
-Usage: py neo4j_bench.py   (requires bolt 127.0.0.1:7687, database neo4j imported)
+Usage: py neo4j_bench.py   (requires the configured Neo4j server, database neo4j imported)
 """
 import json
 import os
@@ -21,7 +21,8 @@ def pct(times, p):
 
 def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    d = GraphDatabase.driver("bolt://127.0.0.1:7687", auth=("neo4j", "benchpass"))
+    neo = P.service("neo4j")
+    d = GraphDatabase.driver(neo.uri("bolt"), auth=(neo.user, neo.password))
     res = {}
     with d.session() as s:
         res["neo4j_version"] = s.run("CALL dbms.components() YIELD versions RETURN versions[0] AS v").single()["v"]

@@ -8,7 +8,8 @@ import bench_paths as P
 
 OUT = str(P.RESULTS / "mongodb.json")
 
-cli = MongoClient("127.0.0.1", 27017)
+mongo = P.service("mongo")
+cli = MongoClient(mongo.host, mongo.port)
 db = cli.bench
 db.shipments.create_index([("order_id", ASCENDING)])
 pipe = [

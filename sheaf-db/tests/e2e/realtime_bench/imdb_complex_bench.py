@@ -17,7 +17,8 @@ import bench_paths as P
 OUT = str(P.RESULTS / "imdb_job.json")
 IMDB = P.imdb()
 DDB = P.data("duckdb", "imdb.duckdb")
-PG = {"host": "127.0.0.1", "port": 5433, "user": "postgres", "dbname": "imdb"}
+_pg = P.service("pg")
+PG = {"host": _pg.host, "port": _pg.port, "user": _pg.user, "dbname": "imdb"}
 
 TABLES = ["title.basics", "title.akas", "title.crew", "title.episode",
           "title.principals", "title.ratings", "name.basics"]

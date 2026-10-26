@@ -46,7 +46,8 @@ EXPECTED = {
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "imdb_setup.json")
 PG_BIN = P.pg_app()
 PG_DATA = P.pgbench_data()
-PG_PORT = "5433"
+PG = P.service("pg")
+PG_PORT = str(PG.port)
 
 # The seven IMDb files, the table name, and the column order of the file.
 FILES = [
@@ -119,7 +120,7 @@ def run_duckdb() -> dict:
 
 def pg_env():
     env = dict(os.environ)
-    env["PGPASSWORD"] = "postgres"
+    env["PGPASSWORD"] = PG.password
     return env
 
 
@@ -149,7 +150,7 @@ def pg_ctl_start() -> subprocess.CompletedProcess:
 def pg_alive() -> bool:
     """True when a server on PG_PORT already answers."""
     r = subprocess.run(
-        [os.path.join(PG_BIN, "psql.exe"), "-U", "postgres", "-h", "localhost",
+        [os.path.join(PG_BIN, "psql.exe"), "-U", PG.user, "-h", PG.host,
          "-p", PG_PORT, "-d", "postgres", "-t", "-A", "-c", "select 1"],
         capture_output=True, text=True, env=pg_env(), check=False,
     )
@@ -166,7 +167,7 @@ def start_pg() -> str:
         return "initdb is absent"
     if not os.path.exists(os.path.join(PG_DATA, "PG_VERSION")):
         os.makedirs(PG_DATA, exist_ok=True)
-        r = pg(["initdb.exe", "-D", PG_DATA, "-U", "postgres", "-A", "trust", "-E", "UTF8"])
+        r = pg(["initdb.exe", "-D", PG_DATA, "-U", PG.user, "-A", "trust", "-E", "UTF8"])
         if r.returncode != 0:
             return "initdb failed: " + r.stderr[-400:]
     r = pg_ctl_start()
@@ -181,7 +182,7 @@ def run_postgres() -> dict:
     if err:
         return {"status": "unavailable", "reason": err}
     psql = os.path.join(PG_BIN, "psql.exe")
-    base = [psql, "-U", "postgres", "-h", "localhost", "-p", PG_PORT, "-q"]
+    base = [psql, "-U", PG.user, "-h", PG.host, "-p", PG_PORT, "-q"]
     subprocess.run(base + ["-c", "DROP DATABASE IF EXISTS imdbbench"], check=False,
                    capture_output=True, text=True, env=pg_env())
     subprocess.run(base + ["-c", "CREATE DATABASE imdbbench"], check=True,

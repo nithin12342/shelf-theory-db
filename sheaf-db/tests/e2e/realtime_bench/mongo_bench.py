@@ -1,5 +1,5 @@
 """MongoDB E2E bench: 5 collections x 100k docs, $lookup pipeline, mixed R/W.
-Usage: py mongo_bench.py   (requires mongod on 27017)
+Usage: py mongo_bench.py   (requires the configured MongoDB server)
 """
 import json
 import os
@@ -24,7 +24,8 @@ def pct(times, p):
 def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     rng = random.Random(SEED)
-    cli = MongoClient("127.0.0.1", 27017, serverSelectionTimeoutMS=10000)
+    mongo = P.service("mongo")
+    cli = MongoClient(mongo.host, mongo.port, serverSelectionTimeoutMS=10000)
     res = {"mongo_version": cli.server_info()["version"]}
     db = cli.bench
     if db.payments.estimated_document_count() == N:
@@ -84,7 +85,7 @@ def main():
     def worker(seed):
         r = random.Random(seed)
         t = []
-        c = MongoClient("127.0.0.1", 27017)
+        c = MongoClient(mongo.host, mongo.port)
         d = c.bench
         for _ in range(500):
             i = r.randint(1, N)

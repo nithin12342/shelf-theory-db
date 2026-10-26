@@ -1,5 +1,5 @@
 """ScyllaDB E2E bench: KV table, point reads, range scatter, write-flood reads.
-Usage: py scylla_bench.py   (requires scylla on 9042)
+Usage: py scylla_bench.py   (requires the configured ScyllaDB server)
 """
 import json
 import os
@@ -23,7 +23,8 @@ def pct(times, p):
 
 def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    cl = Cluster(["127.0.0.1"], port=9042)
+    scylla = P.service("scylla")
+    cl = Cluster([scylla.host], port=scylla.port)
     se = cl.connect()
     res = {"scylla_version": se.execute("SELECT release_version FROM system.local").one()[0]}
     se.execute("CREATE KEYSPACE IF NOT EXISTS bench WITH replication={'class':'SimpleStrategy','replication_factor':1}")

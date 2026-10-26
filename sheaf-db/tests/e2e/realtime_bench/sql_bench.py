@@ -1,6 +1,6 @@
 """Shared SQL bench for MariaDB / PostgreSQL: TPC-H SF1 load + timed queries.
 Usage: py sql_bench.py mariadb  |  py sql_bench.py pg
-Expects server up (mariadb 3307 / pg 5433) with root/benchpass or postgres/benchpass.
+Expects the configured MariaDB and PostgreSQL servers.
 """
 import json
 import os
@@ -30,12 +30,14 @@ def pct(times, p):
 
 
 def connect(engine):
+    svc = P.service(engine)
     if engine == "mariadb":
         import pymysql
-        return pymysql.connect(host="127.0.0.1", port=3307, user="root", password="benchpass",
-                               database="bench", local_infile=True)
+        return pymysql.connect(host=svc.host, port=svc.port, user=svc.user,
+                               password=svc.password, database="bench", local_infile=True)
     import psycopg
-    return psycopg.connect(host="127.0.0.1", port=5433, user="postgres", password="benchpass", dbname="bench")
+    return psycopg.connect(host=svc.host, port=svc.port, user=svc.user,
+                           password=svc.password, dbname="bench")
 
 
 def main():

@@ -65,7 +65,8 @@ def main():
     ensure_rows()
     count_rows, blob = read_rows()
 
-    cl = Cluster(["127.0.0.1"], port=9042)
+    scylla = P.service("scylla")
+    cl = Cluster([scylla.host], port=scylla.port)
     ses = cl.connect()
     ses.execute(f"DROP KEYSPACE IF EXISTS {KEYSPACE}")
     ses.execute(

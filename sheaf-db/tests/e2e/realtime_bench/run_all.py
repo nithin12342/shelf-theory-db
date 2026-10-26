@@ -43,11 +43,11 @@ def stamp():
     return datetime.datetime.now(IST).strftime("%Y-%m-%d %H:%M %Z")
 
 
-def wait_port(port, timeout=120):
+def wait_port(host, port, timeout=120):
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
-            socket.create_connection(("127.0.0.1", port), timeout=2).close()
+            socket.create_connection((host, port), timeout=2).close()
             return True
         except OSError:
             time.sleep(2)
@@ -81,33 +81,43 @@ def sh(cmd, timeout=3600):
 # (1,287x). ScyllaDB (CQL, wide-column) takes the NoSQL slot: it moves the
 # join to write time and answers from a clustering-range scan.
 def engines():
-    """The engine matrix. Every path comes from the bench roots."""
+    """The engine matrix. Every path and port comes from the bench config."""
+    redis = P.service("redis")
+    mariadb = P.service("mariadb")
+    pg = P.service("pg")
+    neo4j = P.service("neo4j")
+    scylla = P.service("scylla")
     return {
         "sqlite": {"bench": "py sqlite_bench.py", "json": "sqlite.json"},
         "duckdb": {"bench": "py duckdb_bench.py", "json": "duckdb.json"},
         "redis": {"bench": "py redis_bench.py", "json": "redis.json",
                   "pexec": [P.redis_server(), "--dir", P.data("redis"),
                             "--maxmemory", "4gb", "--maxmemory-policy", "noeviction",
-                            "--port", "6379"],
-                  "port": 6379, "wait": 30, "stop_im": "redis-server.exe"},
+                            "--port", str(redis.port)],
+                  "host": redis.host, "port": redis.port, "wait": 30,
+                  "stop_im": "redis-server.exe"},
         "scylladb": {"bench": "py scylla_bench.py", "json": "scylladb.json",
-                     "start": "docker start bench-scylla", "port": 9042, "wait": 220,
-                     "ready_wait": 150, "stop_cmd": "docker stop bench-scylla"},
+                     "start": "docker start bench-scylla", "host": scylla.host,
+                     "port": scylla.port, "wait": 220, "ready_wait": 150,
+                     "stop_cmd": "docker stop bench-scylla"},
         "mariadb": {"bench": "py sql_bench.py mariadb", "json": "mariadb.json",
                     "pexec": [P.mariadb_app("mysqld.exe"),
-                              "--datadir=" + P.data("mariadb"), "--port=3307",
+                              "--datadir=" + P.data("mariadb"),
+                              f"--port={mariadb.port}",
                               "--innodb-buffer-pool-size=2G", "--console"],
-                    "port": 3307, "wait": 60, "stop_im": "mysqld.exe"},
+                    "host": mariadb.host, "port": mariadb.port, "wait": 60,
+                    "stop_im": "mysqld.exe"},
         "pg": {"bench": "py sql_bench.py pg", "json": "pg.json",
                "pexec": [P.pg_app("pg_ctl.exe"), "-D", P.data("pgsql"),
-                         "-o", "-p 5433 -c shared_buffers=2GB -c synchronous_commit=on",
+                         "-o", f"-p {pg.port} -c shared_buffers=2GB -c synchronous_commit=on",
                          "-l", P.data("pgsql", "logfile"), "start"],
-               "port": 5433, "wait": 180,
-               "ready_poll": f'"{P.pg_app("pg_isready.exe")}" -h 127.0.0.1 -p 5433',
+               "host": pg.host, "port": pg.port, "wait": 180,
+               "ready_poll": f'"{P.pg_app("pg_isready.exe")}" -h {pg.host} -p {pg.port}',
                "stop_cmd": f'"{P.pg_app("pg_ctl.exe")}" -D "{P.data("pgsql")}" stop'},
         "neo4j": {"bench": "py neo4j_bench.py", "json": "neo4j.json",
-                  "start": "docker start bench-neo4j", "port": 7687, "wait": 150,
-                  "ready_wait": 75, "stop_cmd": "docker stop bench-neo4j"},
+                  "start": "docker start bench-neo4j", "host": neo4j.host,
+                  "port": neo4j.port, "wait": 150, "ready_wait": 75,
+                  "stop_cmd": "docker stop bench-neo4j"},
     }
 
 
@@ -214,12 +224,12 @@ def main():
                                  stderr=subprocess.DEVNULL,
                                  creationflags=subprocess.DETACHED_PROCESS)
                 time.sleep(3)
-                ok = wait_port(e["port"], e.get("wait", 120))
+                ok = wait_port(e["host"], e["port"], e.get("wait", 120))
                 if ok:
                     ok = wait_ready(e, name)
             elif e.get("start"):
                 sh(e["start"])
-                ok = wait_port(e["port"], e.get("wait", 120))
+                ok = wait_port(e["host"], e["port"], e.get("wait", 120))
                 if ok:
                     ok = wait_ready(e, name)
             else:

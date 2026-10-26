@@ -1,7 +1,11 @@
-"""One-shot: create bench db + password on local PG."""
+"""One-shot: create the bench database and password on the configured PG."""
 import psycopg
 
-c = psycopg.connect(host="127.0.0.1", port=5433, user="postgres", dbname="postgres", autocommit=True)
-c.execute("ALTER USER postgres PASSWORD 'benchpass'")
+import bench_paths as P
+
+pg = P.service("pg")
+c = psycopg.connect(host=pg.host, port=pg.port, user=pg.user,
+                    dbname="postgres", autocommit=True)
+c.execute(f'ALTER USER "{pg.user}" PASSWORD %s', (pg.password,))
 c.execute("CREATE DATABASE bench")
 print("bench db + password ready")
