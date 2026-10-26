@@ -9,10 +9,15 @@
 //   n.birthyear >= 1950
 //   HAVING COUNT(*) >= 5
 //   ORDER BY count DESC, avg_rating DESC, name ASC LIMIT 10
+//
+// The default shape is the JOB Q4 shape. Every threshold is a CLI flag:
+//   --q4-min-year, --q4-min-rating, --q4-min-votes, --q4-min-birth-year,
+//   --q4-min-count, --q4-limit
 #![allow(dead_code)]
 
 use std::time::Instant;
 
+use super::bench_args;
 use super::imdb_fiber::{
     basics_flags, basics_id, basics_year, names_id, names_year, ratings_avg, ratings_id,
     ratings_votes, u64_at, BundleReader,
@@ -26,7 +31,46 @@ pub struct Q4Row {
     pub votes: i64,
 }
 
-pub fn run_q4(br: &mut BundleReader) -> Result<(Vec<Q4Row>, f64, f64), String> {
+/// Default Q4 shape values. These are CLI-overridable.
+const DEFAULT_Q4_MIN_YEAR: i32 = 1980;
+const DEFAULT_Q4_MIN_RATING: f32 = 7.8;
+const DEFAULT_Q4_MIN_VOTES: i64 = 50_000;
+const DEFAULT_Q4_MIN_BIRTH_YEAR: i32 = 1950;
+const DEFAULT_Q4_MIN_COUNT: u32 = 5;
+const DEFAULT_Q4_LIMIT: usize = 10;
+
+/// The Q4 predicate shape, parsed from the command line.
+pub struct Q4Params {
+    min_year: i32,
+    min_rating: f32,
+    min_votes: i64,
+    min_birth_year: i32,
+    min_count: u32,
+    limit: usize,
+}
+
+impl Q4Params {
+    /// Read the Q4 flags, with the JOB Q4 shape as the default.
+    pub fn from_args(args: &[String]) -> Self {
+        Self {
+            min_year: bench_args::opt(args, "--q4-min-year", DEFAULT_Q4_MIN_YEAR),
+            min_rating: bench_args::opt(args, "--q4-min-rating", DEFAULT_Q4_MIN_RATING),
+            min_votes: bench_args::opt(args, "--q4-min-votes", DEFAULT_Q4_MIN_VOTES),
+            min_birth_year: bench_args::opt(
+                args,
+                "--q4-min-birth-year",
+                DEFAULT_Q4_MIN_BIRTH_YEAR,
+            ),
+            min_count: bench_args::opt(args, "--q4-min-count", DEFAULT_Q4_MIN_COUNT),
+            limit: bench_args::opt(args, "--q4-limit", DEFAULT_Q4_LIMIT),
+        }
+    }
+}
+
+pub fn run_q4(
+    br: &mut BundleReader,
+    p: &Q4Params,
+) -> Result<(Vec<Q4Row>, f64, f64), String> {
     let t_load = Instant::now();
     let basics = br.section("basics")?;
     let ratings = br.section("ratings")?;
@@ -57,7 +101,7 @@ pub fn run_q4(br: &mut BundleReader) -> Result<(Vec<Q4Row>, f64, f64), String> {
         let tid = ratings_id(&ratings, i) as usize;
         let avg = ratings_avg(&ratings, i);
         let votes = ratings_votes(&ratings, i);
-        if tid < slots && avg >= 7.8 && votes >= 50_000 {
+        if tid < slots && avg >= p.min_rating && votes >= p.min_votes {
             avg_of[tid] = avg;
             votes_of[tid] = votes;
             ok_title[tid >> 6] |= 1 << (tid & 63);
@@ -68,7 +112,7 @@ pub fn run_q4(br: &mut BundleReader) -> Result<(Vec<Q4Row>, f64, f64), String> {
         let tid = basics_id(&basics, i) as usize;
         let yr = basics_year(&basics, i);
         let fl = basics_flags(&basics, i);
-        if tid < slots && (fl & 1 == 0 || yr < 1980) {
+        if tid < slots && (fl & 1 == 0 || yr < p.min_year) {
             ok_title[tid >> 6] &= !(1 << (tid & 63));
         }
     }
@@ -85,7 +129,7 @@ pub fn run_q4(br: &mut BundleReader) -> Result<(Vec<Q4Row>, f64, f64), String> {
         let by = names_year(&names, i);
         if nid < nslots {
             idx_of[nid] = i as u32;
-            if by >= 1950 {
+            if by >= p.min_birth_year {
                 ok_name[nid >> 6] |= 1 << (nid & 63);
             }
         }
@@ -126,7 +170,7 @@ pub fn run_q4(br: &mut BundleReader) -> Result<(Vec<Q4Row>, f64, f64), String> {
     let mut candidates: Vec<(u32, f64, i64, String)> = Vec::new();
     for nid in 0..nslots {
         let cnt = counts[nid];
-        if cnt >= 5 {
+        if cnt >= p.min_count {
             let k = idx_of[nid] as usize;
             let a = str_off[k] as usize;
             let b = str_off[k + 1] as usize;
@@ -143,8 +187,8 @@ pub fn run_q4(br: &mut BundleReader) -> Result<(Vec<Q4Row>, f64, f64), String> {
             .then_with(|| a.3.cmp(&b.3))
     });
 
-    let mut top10 = Vec::with_capacity(10);
-    for (cnt, avg, votes, name) in candidates.into_iter().take(10) {
+    let mut top10 = Vec::with_capacity(p.limit);
+    for (cnt, avg, votes, name) in candidates.into_iter().take(p.limit) {
         top10.push(Q4Row { name, count: cnt, avg, votes });
     }
 

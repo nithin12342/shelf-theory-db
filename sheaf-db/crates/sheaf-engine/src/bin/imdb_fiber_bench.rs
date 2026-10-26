@@ -283,7 +283,7 @@ fn main() {
     let q2_ms = t0.elapsed().as_secs_f64() * 1e3;
     println!("q2: load_ms={load_q2:.3} query_ms={q2_ms:.4} bytes={} top={:?}", a2b.len(), top);
     // ---------- Q4: JOB complex query ----------
-    let (top4, load_q4, q4_ms) = imdb_q4::run_q4(&mut br).expect("q4 run");
+    let (top4, load_q4, q4_ms) = imdb_q4::run_q4(&mut br, &imdb_q4::Q4Params::from_args(&args)).expect("q4 run");
     let top4_pairs: Vec<(String, u32)> = top4.iter().map(|r| (r.name.clone(), r.count)).collect();
     println!("q4: load_ms={load_q4:.3} query_ms={q4_ms:.4} count={} top={:?}", top4.len(), top4_pairs);
 
