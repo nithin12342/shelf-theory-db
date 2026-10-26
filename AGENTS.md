@@ -84,6 +84,9 @@ The global rules at `~/.config/opencode/instructions.md` hold the full rule set.
 2. Do not run `git push`, `git fetch`, `git pull`, or any other command that touches a remote.
 3. Keep `SKELETON.md` up to date. It is the source of truth for this repository.
 4. Follow the engineering method in Part 5 of the global rules file. Load the `intention-engineering` skill first.
+5. Compare the databases with a Topological Query Language (TQL) query. A TQL query is a declarative query over a cellular complex.
+6. Give the TQL text, the native equivalent, and the measured time for each engine in the comparison.
+7. State a TQL optimizer cost as an estimate. Do not state it as an execution time. The TQL-to-fiber execution bridge (OPT-004) is not built.
 
 ---
 
@@ -107,6 +110,7 @@ number in every one of them names a committed result file, or a derivation shown
 | `FIBER_LIFECYCLE_PLAN.md` | The fiber bundle lifecycle. Part C holds the performance-waste nodes. |
 | `CONVERSATION_LOG_2026-10-21.md` and `CONVERSATION_LOG_2026-10-22.md` | The session records, with every correction filed. |
 | `CODE_CHANGE_MAP.md` | Every change mapped to its files, its size and its state. |
+| `TQL_APPLICATION_COMPARISON_2026-10-26.md` | The live application comparison, with the TQL text, the native equivalent, and the real number for each engine. |
 
 **Two rules that came out of the sessions.**
 
