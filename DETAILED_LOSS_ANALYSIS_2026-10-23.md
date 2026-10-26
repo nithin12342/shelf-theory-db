@@ -102,7 +102,7 @@ In our live benchmark run on 2026-10-23:
    DuckDB evaluates chunks of 2,048 values using AVX2 instructions that execute multiple additions per CPU cycle.
 
 #### Engineering remedy and verification
-We resolved this loss in [`sheaf-db/crates/sheaf-engine/src/bin/fused_scan_bench.rs`](file:///d:/d2/sheaf-db/crates/sheaf-engine/src/bin/fused_scan_bench.rs).
+We resolved this loss in [`sheaf-db/crates/sheaf-engine/src/bin/fused_scan_bench.rs`](sheaf-db/crates/sheaf-engine/src/bin/fused_scan_bench.rs).
 By unrolling the scan loop into four independent register accumulators (`acc0`, `acc1`, `acc2`, `acc3`), ShelfDB eliminates instruction stalls.
 With loop fusion, ShelfDB completes the identical scan in **4.00 ms**, which is **1.40 times faster than DuckDB**.
 
@@ -144,7 +144,7 @@ ShelfDB has clear boundaries where it wins and where it loses:
 ## 5. Verification evidence
 
 All measurements in this document come from live executions on 2026-10-23:
-- SQLite measurements: [`sheaf-db/tests/e2e/realtime_bench/results/sqlite.json`](file:///d:/d2/sheaf-db/tests/e2e/realtime_bench/results/sqlite.json)
-- DuckDB measurements: [`sheaf-db/tests/e2e/realtime_bench/results/duckdb.json`](file:///d:/d2/sheaf-db/tests/e2e/realtime_bench/results/duckdb.json)
-- Redis measurements: [`sheaf-db/tests/e2e/realtime_bench/results/redis.json`](file:///d:/d2/sheaf-db/tests/e2e/realtime_bench/results/redis.json)
-- Run summary: [`sheaf-db/tests/e2e/realtime_bench/results/RUN_SUMMARY_20261023_1735.json`](file:///d:/d2/sheaf-db/tests/e2e/realtime_bench/results/RUN_SUMMARY_20261023_1735.json)
+- SQLite measurements: [`sheaf-db/tests/e2e/realtime_bench/results/sqlite.json`](sheaf-db/tests/e2e/realtime_bench/results/sqlite.json)
+- DuckDB measurements: [`sheaf-db/tests/e2e/realtime_bench/results/duckdb.json`](sheaf-db/tests/e2e/realtime_bench/results/duckdb.json)
+- Redis measurements: [`sheaf-db/tests/e2e/realtime_bench/results/redis.json`](sheaf-db/tests/e2e/realtime_bench/results/redis.json)
+- Run summary: [`sheaf-db/tests/e2e/realtime_bench/results/RUN_SUMMARY_20261023_1735.json`](sheaf-db/tests/e2e/realtime_bench/results/RUN_SUMMARY_20261023_1735.json)
