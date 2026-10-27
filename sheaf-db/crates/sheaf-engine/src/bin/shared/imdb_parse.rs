@@ -80,10 +80,67 @@ impl FieldScratch {
         &line[self.start[k] as usize..self.end[k] as usize]
     }
 
-    /// AVX2-flavoured scan: same contract as `scan`. On x86_64 this uses
-    /// SIMD compare; on other targets it falls back to scan_simd.
+    /// AVX2-flavoured scan: finds tab delimiters in 32-byte chunks.
     pub fn scan_avx2(&mut self, line: &[u8], want: &[u8]) {
-        self.scan_simd(line, want);
+        #[cfg(target_arch = "x86_64")]
+        {
+            use std::arch::x86_64::*;
+            let n = line.len();
+            let mut wi = 0usize;
+            let mut f = 0usize;
+            let mut fstart = 0usize;
+            let mut j = 0usize;
+            while j + 32 <= n {
+                unsafe {
+                    let chunk = _mm256_loadu_si256(line.as_ptr().add(j) as *const _);
+                    let tab = _mm256_cmpeq_epi8(chunk, _mm256_set1_epi8(b'\t' as i8));
+                    let mut mask = _mm256_movemask_epi8(tab) as u32;
+                    if mask == 0 {
+                        j += 32;
+                        continue;
+                    }
+                    while mask != 0 {
+                        let off = mask.trailing_zeros() as usize;
+                        let pos = j + off;
+                        while wi < want.len() && want[wi] as usize == f {
+                            self.start[wi] = fstart as u32;
+                            self.end[wi] = pos as u32;
+                            wi += 1;
+                        }
+                        f += 1;
+                        fstart = pos + 1;
+                        mask &= mask - 1;
+                    }
+                }
+                j += 32;
+            }
+            while j < n {
+                if line[j] == b'\t' {
+                    while wi < want.len() && want[wi] as usize == f {
+                        self.start[wi] = fstart as u32;
+                        self.end[wi] = j as u32;
+                        wi += 1;
+                    }
+                    f += 1;
+                    fstart = j + 1;
+                }
+                j += 1;
+            }
+            if wi < want.len() && want[wi] as usize == f {
+                self.start[wi] = fstart as u32;
+                self.end[wi] = n as u32;
+                wi += 1;
+            }
+            while wi < want.len() {
+                self.start[wi] = 0;
+                self.end[wi] = 0;
+                wi += 1;
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            self.scan(line, want);
+        }
     }
 
     /// SWAR-flavoured scan: same contract as `scan`, unrolled four bytes at a
@@ -377,7 +434,12 @@ mod tests {
             a.scan(&line, &want);
             c.scan_simd(&line, &want);
             for k in 0..want.len() {
-                assert_eq!(a.get(&line, k), c.get(&line, k), "field {} differs", k);
+                assert_eq!(a.get(&line, k), c.get(&line, k), "field {} differs (simd)", k);
+            }
+            let mut d = FieldScratch::new();
+            d.scan_avx2(&line, &want);
+            for k in 0..want.len() {
+                assert_eq!(a.get(&line, k), d.get(&line, k), "field {} differs (avx2)", k);
             }
         }
     }

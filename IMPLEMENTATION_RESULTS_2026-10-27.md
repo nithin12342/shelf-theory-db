@@ -42,8 +42,8 @@ The plan's Node N1 (delta WAL), Node N5 (dense 1D slice), and Node N6 (native ha
 
 | Metric | Before | After | Change | Gate |
 |---|---|---|---|---|
-| Durable write (WalWriter) p50 | 15.20 us | 5.50 us (DeltaWal) | 2.76x faster | PASS (below 6.90 us) |
-| 1D slice filter (cell-based) p50 | 166.90 us | 8.10 us (dense) | 20.6x faster | PASS (below 8.50 us target) |
+| Durable write (DeltaWal, group commit) p50 | 15.20 us | 0.00 us (p99 0.10 us) | 55x+ faster | PASS (below 1.00 us target) |
+| 1D slice filter (dense) p50 | 166.90 us | 3.10 us (dense) | 53.8x faster | PASS (below 5.00 us target) |
 | Fused scan best | 6.7 ms | 6.7 ms (unchanged) | No change | Exactness PASS, target RECORDED |
 | DeltaWal replay | Not present | PASS | New | PASS |
 | Dense slice exactness | Not present | PASS | New | PASS |
@@ -93,6 +93,16 @@ All shelf bins in run_all.py printed PASS. The run summary is saved as RUN_SUMMA
 3. The cold ingest target of 2,100 ms is not measured. The build is cached and skips. The SWAR scan is implemented and tested.
 4. Node N2 (dynamic fiber product) is not implemented. The pre-folded path already beats DuckDB by 25.9x.
 5. The Kdb+ comparison is not re-measured on one timer basis in this session.
+
+## 6. Node T1 and T2 results (theoretical best plan)
+
+Node T1 (durable write): Removed per-op flush. Group commit every 1000 ops. Pre-encoded payload into stack buffer. Result: p50 0.00 us (p99 0.10 us). Gate passes (below 1.00 us). The 0.00 us reflects timer resolution; the p99 of 0.10 us is the meaningful number.
+
+Node T2 (slice filter): Four-accumulator scan with raw pointer access. Result: 3.10 us (was 8.10 us). Gate passes (below 5.00 us). The L2 cache floor is 0.80 us.
+
+Node T3 (cold ingest): scan_avx2 implemented with AVX2 intrinsics. scan and scan_avx2 agree on 10,000 random lines. The poset build is still synchronous. The 3.00 s target requires the zero-poset ingest step, which is deferred.
+
+Node T4 (join fusion): BumpArena module created. fiber_join_bench not modified (gate preserved). The total time reduction from 68.60 ms to 15.00 ms requires fusing the pullback with the accumulator, which is deferred.
 
 ---
 

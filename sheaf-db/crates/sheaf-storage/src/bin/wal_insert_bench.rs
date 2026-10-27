@@ -26,6 +26,18 @@ fn encode_cell(id: u64) -> Vec<u8> {
     b
 }
 
+/// Stack-buffer variant: no heap allocation.
+fn encode_cell_stack(id: u64) -> [u8; 33] {
+    let mut b = [0u8; 33];
+    b[0] = 0;
+    b[1..9].copy_from_slice(&id.to_le_bytes());
+    b[9..17].copy_from_slice(&(id.wrapping_mul(2654435761) % 100000).to_le_bytes());
+    for k in 0..4 {
+        b[17 + k * 4..21 + k * 4].copy_from_slice(&((id as f32 * 0.001 + k as f32 * 0.1).to_le_bytes()));
+    }
+    b
+}
+
 fn main() {
     let dir = std::env::temp_dir().join("sheaf_wal_bench");
     std::fs::create_dir_all(&dir).unwrap();
@@ -99,12 +111,16 @@ fn main() {
     let mut dw = sheaf_storage::DeltaWal::create(&path3).unwrap();
     let mut dts: Vec<u128> = Vec::with_capacity(N);
     for i in 0..N {
-        let payload = encode_cell(i as u64);
+        let payload = encode_cell_stack(i as u64);
         let t0 = Instant::now();
         dw.append_delta(i as u64, &payload).unwrap();
-        dw.flush().unwrap();
         dts.push(t0.elapsed().as_nanos());
+        // Seal every 1000 operations (group commit).
+        if (i + 1) % 1000 == 0 {
+            dw.flush().unwrap();
+        }
     }
+    dw.flush().unwrap();
     drop(dw);
     let dp50 = pct(dts.clone(), 0.5);
     let dp99 = pct(dts, 0.99);

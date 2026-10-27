@@ -37,7 +37,7 @@ impl DenseTimeSeries {
     }
 
     /// Sum payloads for timestamps in [lo, hi], using four independent
-    /// accumulators to avoid the single-chain stall.
+    /// accumulators and raw pointer access to skip bounds checks.
     pub fn slice_sum(&self, lo: u64, hi: u64) -> (f64, usize) {
         // find lower bound
         let mut low = 0usize;
@@ -55,24 +55,30 @@ impl DenseTimeSeries {
         while hi_idx < self.timestamps.len() && self.timestamps[hi_idx] <= hi {
             hi_idx += 1;
         }
-        let slice = &self.payloads[low..hi_idx];
-        let mut a0 = 0f64;
-        let mut a1 = 0f64;
-        let mut a2 = 0f64;
-        let mut a3 = 0f64;
-        let chunks = slice.len() / 4;
-        for i in 0..chunks {
-            let base = i * 4;
-            a0 += slice[base] as f64;
-            a1 += slice[base + 1] as f64;
-            a2 += slice[base + 2] as f64;
-            a3 += slice[base + 3] as f64;
+        let count = hi_idx - low;
+        if count == 0 {
+            return (0.0, 0);
         }
-        let mut acc = (a0 + a1) + (a2 + a3);
-        for v in &slice[chunks * 4..] {
-            acc += *v as f64;
+        // Raw pointer scan with four accumulators (no bounds checks).
+        let mut acc0 = 0f64;
+        let mut acc1 = 0f64;
+        let mut acc2 = 0f64;
+        let mut acc3 = 0f64;
+        unsafe {
+            let ptr = self.payloads.as_ptr().add(low);
+            let chunks = count / 4;
+            for i in 0..chunks {
+                acc0 += *ptr.add(i * 4) as f64;
+                acc1 += *ptr.add(i * 4 + 1) as f64;
+                acc2 += *ptr.add(i * 4 + 2) as f64;
+                acc3 += *ptr.add(i * 4 + 3) as f64;
+            }
+            let mut acc = (acc0 + acc1) + (acc2 + acc3);
+            for i in (chunks * 4)..count {
+                acc += *ptr.add(i) as f64;
+            }
+            (acc, count)
         }
-        (acc, hi_idx - low)
     }
 }
 
