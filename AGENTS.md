@@ -111,6 +111,8 @@ number in every one of them names a committed result file, or a derivation shown
 | `CONVERSATION_LOG_2026-10-21.md` and `CONVERSATION_LOG_2026-10-22.md` | The session records, with every correction filed. |
 | `CODE_CHANGE_MAP.md` | Every change mapped to its files, its size and its state. |
 | `TQL_APPLICATION_COMPARISON_2026-10-26.md` | The live application comparison, with the TQL text, the native equivalent, and the real number for each engine. |
+| `KDB_TIMESERIES_COMPARISON_2026-10-27.md` | Kdb+ installation, license gate, and time-series comparison against ShelfDB and DuckDB. |
+| `MANUAL_CLI_BENCHMARK_AND_FIVE_FAILURES_2026-10-27.md` | Native CLI manual execution benchmark across the five failure workloads and the 50 test cases. |
 
 **Two rules that came out of the sessions.**
 

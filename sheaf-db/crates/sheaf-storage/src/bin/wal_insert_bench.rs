@@ -93,9 +93,30 @@ fn main() {
     let (recs2, trunc2) = replay(&path2).unwrap();
     println!("gate_batch_replay={}", if recs2.len() == N && !trunc2 { "PASS" } else { "FAIL" });
 
+    // DeltaWal gate (Node N1).
+    let path3: PathBuf = dir.join("test4_delta.wal");
+    let _ = std::fs::remove_file(&path3);
+    let mut dw = sheaf_storage::DeltaWal::create(&path3).unwrap();
+    let mut dts: Vec<u128> = Vec::with_capacity(N);
+    for i in 0..N {
+        let payload = encode_cell(i as u64);
+        let t0 = Instant::now();
+        dw.append_delta(i as u64, &payload).unwrap();
+        dw.flush().unwrap();
+        dts.push(t0.elapsed().as_nanos());
+    }
+    drop(dw);
+    let dp50 = pct(dts.clone(), 0.5);
+    let dp99 = pct(dts, 0.99);
+    println!("delta_wal_durable: n={} p50_ns={} p99_ns={}", N, dp50, dp99);
+    let (drecs, _, dtorn) = sheaf_storage::replay_delta(&path3).unwrap();
+    let dreplay_ok = drecs.len() == N && !dtorn;
+    println!("gate_delta_wal_replay={}", if dreplay_ok { "PASS" } else { "FAIL" });
+    let _ = std::fs::remove_file(&path3);
+
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&path2);
-    if !replay_ok {
+    if !replay_ok || !dreplay_ok {
         std::process::exit(1);
     }
     println!("WAL_INSERT_BENCH: PASS");

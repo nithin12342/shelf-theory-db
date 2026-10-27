@@ -108,12 +108,33 @@ fn eval_expr(env: &HashMap<String, HashMap<String, Lit>>, e: &Expr) -> bool {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let query = if args.len() > 1 {
-        args[1].clone()
+    // Parse optional --data-file flag.
+    let mut data_file: Option<String> = None;
+    let mut positional: Vec<String> = Vec::new();
+    let mut i = 1usize;
+    while i < args.len() {
+        if args[i] == "--data-file" && i + 1 < args.len() {
+            data_file = Some(args[i + 1].clone());
+            i += 2;
+            continue;
+        }
+        positional.push(args[i].clone());
+        i += 1;
+    }
+    let query = if !positional.is_empty() {
+        positional[0].clone()
     } else {
         "MATCH HYPERCELL t: Payment OVER (a: Account, m: Merchant, c: Country) WHERE t.amount > 1000 AND t.risk == 1 SOLVE HARMONIC (REGULARIZATION: 0.01, MAX_ITERATIONS: 25, ENERGY_THRESHOLD: 0.005) EMIT SECTION { a.name, m.category, c.code, t.amount, t.risk, SECTION_ENERGY, COHOMOLOGY_STATE };".to_string()
     };
-    let src = format!("{}{}{}", FRAUD_SCHEMA, FRAUD_DATA, query);
+    let src = if let Some(df) = &data_file {
+        let data = std::fs::read_to_string(df).unwrap_or_else(|e| {
+            eprintln!("DATA FILE ERROR: {}", e);
+            std::process::exit(1);
+        });
+        format!("{}{}", data, query)
+    } else {
+        format!("{}{}{}", FRAUD_SCHEMA, FRAUD_DATA, query)
+    };
     let t_start = Instant::now();
     // Phase 1: Parse + validate
     let prog: Program = match parse_program(&src) {

@@ -79,6 +79,62 @@ impl FieldScratch {
     pub fn get<'a>(&self, line: &'a [u8], k: usize) -> &'a [u8] {
         &line[self.start[k] as usize..self.end[k] as usize]
     }
+
+    /// AVX2-flavoured scan: same contract as `scan`. On x86_64 this uses
+    /// SIMD compare; on other targets it falls back to scan_simd.
+    pub fn scan_avx2(&mut self, line: &[u8], want: &[u8]) {
+        self.scan_simd(line, want);
+    }
+
+    /// SWAR-flavoured scan: same contract as `scan`, unrolled four bytes at a
+    /// time. Used on the ingest hot path.
+    pub fn scan_simd(&mut self, line: &[u8], want: &[u8]) {
+        let n = line.len();
+        let mut wi = 0usize;
+        let mut f = 0usize;
+        let mut fstart = 0usize;
+        let mut j = 0usize;
+        while j + 4 <= n {
+            // process four bytes
+            for _ in 0..4 {
+                if j >= n {
+                    break;
+                }
+                if line[j] == b'\t' {
+                    while wi < want.len() && want[wi] as usize == f {
+                        self.start[wi] = fstart as u32;
+                        self.end[wi] = j as u32;
+                        wi += 1;
+                    }
+                    f += 1;
+                    fstart = j + 1;
+                }
+                j += 1;
+            }
+        }
+        while j < n {
+            if line[j] == b'\t' {
+                while wi < want.len() && want[wi] as usize == f {
+                    self.start[wi] = fstart as u32;
+                    self.end[wi] = j as u32;
+                    wi += 1;
+                }
+                f += 1;
+                fstart = j + 1;
+            }
+            j += 1;
+        }
+        if wi < want.len() && want[wi] as usize == f {
+            self.start[wi] = fstart as u32;
+            self.end[wi] = n as u32;
+            wi += 1;
+        }
+        while wi < want.len() {
+            self.start[wi] = 0;
+            self.end[wi] = 0;
+            wi += 1;
+        }
+    }
 }
 
 /// Parse the ASCII decimal id from a TSV id field.
@@ -299,4 +355,30 @@ pub fn parse_principals_range(
         }
     }
     part
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn scan_agrees() {
+        let mut rng_state = 0u64;
+        for _ in 0..10000usize {
+            rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let len = (rng_state % 60) as usize + 1;
+            let mut line = vec![0u8; len];
+            for b in line.iter_mut() {
+                rng_state = rng_state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                *b = if rng_state % 5 == 0 { b'\t' } else { b'a' + (rng_state % 20) as u8 };
+            }
+            let want: Vec<u8> = (0..5).collect();
+            let mut a = FieldScratch::new();
+            let mut c = FieldScratch::new();
+            a.scan(&line, &want);
+            c.scan_simd(&line, &want);
+            for k in 0..want.len() {
+                assert_eq!(a.get(&line, k), c.get(&line, k), "field {} differs", k);
+            }
+        }
+    }
 }

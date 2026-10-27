@@ -175,3 +175,67 @@ the query language changes. Every node is in the bench and bundle path:
 The dependency that governs the order: the pre-aggregate joins add 18,349 ms to the build, so
 the 4-thread parse (112,721 ms to 28,180 ms) must land before the pre-aggregates are worth
 anything at scale. Traceability: REQ-058 / SPEC-058 / METHOD-059..066.
+
+## Failure-state disposition (2026-10-27)
+
+The table below records each measured failure state, whether a modification is required, and the architecture action.
+
+Rows are failure states. Columns are opponent, measured deficit, modification required, and architecture action.
+
+| Failure state | Opponent | Measured deficit | Modification required | Architecture action |
+|---|---|---|---|---|
+| Durable single-point write | SQLite 3 | 4.06x slower (1.70 us vs 6.90 us) | No | Keep epoch WAL for batched writes. Do not chase SQLite on scalar inserts. |
+| Raw join without fiber bundle | DuckDB 1.5 | 15.79x slower (158.30 ms vs 2,500.00 ms) | No | Keep pre-folded fiber bundles. Document as an architectural boundary. |
+| Analytical scan, single accumulator | DuckDB 1.5 | Solved: 4.00 ms vs 5.60 ms | No | Keep the four-accumulator fused scan. |
+| Cold ingest and setup | DuckDB 1.5 and Redis | 51.10 s to 112.72 s build; bundle cache under 1 s on the second build | Yes | Add bundle cache, incremental section rewrite, and partial rebuild. |
+| Pure 1D vector slice filter | Kdb+ 5f | 4.80x slower (10.00 us vs 48.00 us) | Optional | Add a dense 0-cochain vector path only if time-series workloads are in scope. |
+
+Notes:
+
+- The SQLite and DuckDB raw-join losses are permanent boundaries. No modification can remove them without changing the engine identity.
+- The analytical scan loss is already removed by loop fusion.
+- The ingest loss is structural but reducible. The bundle cache and partial rebuild nodes cover it.
+- The Kdb+ loss is a specialization gap, not a correctness gap.
+
+## Foreign-engine paths considered and rejected (2026-10-27)
+
+These paths are listed for contrast only. They are not accepted unless they are recast as sheaf operations.
+
+The table below records a foreign-engine path for each failure state. Each path names the lower bound it rests on. None of these paths is accepted as a replacement for the sheaf.
+
+Rows are failure states. Columns are opponent, mathematical path, modification required, and verification gate.
+
+| Failure state | Opponent | Mathematical path | Modification required | Verification gate |
+|---|---|---|---|---|
+| Durable single-point write | SQLite 3 | Group commit amortizes the fsync: per-write cost equals T_append plus T_fs divided by N. A fixed-size descriptor and hardware CRC lower T_append. | Yes | p50 under 1.70 us on a quiet host |
+| Raw join without fiber bundle | DuckDB 1.5 | Radix hash join in expected O(n + m) time with vectorized probe. | Yes | Join time under 158.30 ms on 6,001,215 rows |
+| Analytical scan, single accumulator | DuckDB 1.5 | Already 4.00 ms. Further SIMD reduction moves toward bytes divided by bandwidth. | Optional | Scan time stays under 5.60 ms |
+| Cold ingest and setup | DuckDB 1.5 and Redis | SIMD TSV parse and parallel I/O move toward input bytes divided by disk bandwidth. | Yes | Build time under the measured opponent setup |
+| Pure 1D vector slice filter | Kdb+ 5f | Dense 0-cochain arrays with SIMD filter remove cell-header overhead. | Yes | Slice time under 10.00 us on 100,000 rows |
+
+Notes:
+
+- "Mathematically possible" means the target sits inside a known lower bound. It does not mean the target is measured today.
+- Each path needs a measurement on the real code path before it can be claimed.
+- The raw-join path must stay an optional operator. It must not replace pre-folding, or the sheaf identity changes.
+- The Kdb+ path is a specialization. It does not change the sheaf model.
+
+## Sheaf-native resolution policy (2026-10-27)
+
+The cellular sheaf, the fiber bundle, and every layer in this document stay in place. A fix that replaces them with a relational, vector, or key-value engine is rejected, even if it is faster.
+
+Rows are failure states. Columns are foreign technique rejected, sheaf-native technique accepted, and identity preserved.
+
+| Failure state | Foreign technique rejected | Sheaf-native technique accepted | Identity preserved |
+|---|---|---|---|
+| Durable single-point write | Generic group commit and B-tree page writes | Epoch-stamped fiber section append with local section commit | Yes |
+| Raw join without fiber bundle | Relational hash join | Fiber product of sheaves over a common base, plus pre-folded boundary complexes and answer fibers | Yes |
+| Analytical scan | Unchecked SIMD accumulator tricks | Graded cochain reduction over partitioned sheaf scans | Yes |
+| Cold ingest and setup | Generic parallel CSV parser | Parallel local section assembly and gluing under a frozen epoch | Yes |
+| Pure 1D vector slice filter | Standalone numeric vector engine | Restriction of a 0-cochain to an interval subcomplex using dense coordinate vectors | Yes |
+
+Notes:
+
+- The raw-join boundary remains. The sheaf does not promise ad-hoc joins on flat tables. It promises pre-folded connections.
+- The Kdb+ boundary remains for pure numeric vectors. The sheaf adds structure, and that structure has a cost.
+- Every accepted technique must be verified on the real code path before it is claimed.
