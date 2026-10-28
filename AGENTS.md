@@ -113,6 +113,8 @@ number in every one of them names a committed result file, or a derivation shown
 | `TQL_APPLICATION_COMPARISON_2026-10-26.md` | The live application comparison, with the TQL text, the native equivalent, and the real number for each engine. |
 | `KDB_TIMESERIES_COMPARISON_2026-10-27.md` | Kdb+ installation, license gate, and time-series comparison against ShelfDB and DuckDB. |
 | `MANUAL_CLI_BENCHMARK_AND_FIVE_FAILURES_2026-10-27.md` | Native CLI manual execution benchmark across the five failure workloads and the 50 test cases. |
+| `TEST_CASES_CONSOLIDATION_2026-10-28.md` | Complete consolidation and inventory of unit tests, E2E suites, and microbenchmarks. |
+| `BENCHMARK_RESULTS_50_TEST_CASES_2026-10-28.md` | Native CLI fresh benchmark execution across 50 high-variance test cases and five problem workloads. |
 
 **Two rules that came out of the sessions.**
 
