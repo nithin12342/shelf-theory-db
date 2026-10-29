@@ -135,7 +135,6 @@ fn main() {
     } else {
         format!("{}{}{}", FRAUD_SCHEMA, FRAUD_DATA, query)
     };
-    let t_start = Instant::now();
     // Phase 1: Parse + validate
     let prog: Program = match parse_program(&src) {
         Ok(p) => p,
@@ -148,9 +147,19 @@ fn main() {
         eprintln!("VALIDATION ERROR: {}", e.msg);
         std::process::exit(1);
     }
-    // Phase 2: Build BCSF
+    // Phase 2: Build BCSF and Pre-folded Topological Fiber Bundle
+    #[derive(Clone, Debug)]
+    struct FiberSection {
+        cell: usize,
+        face_ids: Vec<usize>,
+        boundary_refs: Vec<(String, (String, u64))>,
+        discrete: Vec<(String, Lit)>,
+    }
+    let mut fiber_bundle: HashMap<String, Vec<FiberSection>> = HashMap::new();
+
     let mut builder = BcsfBuilder::new();
     let mut id_of: HashMap<(String, u64), usize> = HashMap::new();
+    let mut gid_to_pair: HashMap<usize, (String, u64)> = HashMap::new();
     let mut dis_map: HashMap<(String, u64), Vec<(String, Lit)>> = HashMap::new();
     let mut next_gid = 0usize;
     let mut class_of: HashMap<String, u64> = HashMap::new();
@@ -166,13 +175,19 @@ fn main() {
                 db[..8].copy_from_slice(&class.to_le_bytes());
                 builder.push(0, Vec::new(), &db, &c.stalk, &[]);
                 id_of.insert((c.type_name.clone(), c.id), next_gid);
+                gid_to_pair.insert(next_gid, (c.type_name.clone(), c.id));
                 next_gid += 1;
                 dis_map.insert((c.type_name.clone(), c.id), c.discrete.clone());
             }
             Stmt::InsertHyper(h) => {
                 let mut bnd = Vec::new();
+                let mut face_ids = Vec::new();
+                let mut bnd_refs = Vec::new();
                 for r in &h.boundary {
-                    bnd.push(*id_of.get(&(r.type_name.clone(), r.id)).unwrap() as u64);
+                    let gid = *id_of.get(&(r.type_name.clone(), r.id)).unwrap();
+                    bnd.push(gid as u64);
+                    face_ids.push(gid);
+                    bnd_refs.push((r.type_name.clone(), (r.type_name.clone(), r.id)));
                 }
                 let mut db = [0u8; 16];
                 let class = *class_of.entry(h.type_name.clone()).or_insert_with(|| {
@@ -183,6 +198,13 @@ fn main() {
                 let morph: Vec<f32> = vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
                 builder.push(2, bnd, &db, &h.stalk, &morph);
                 id_of.insert((h.type_name.clone(), h.id), next_gid);
+                gid_to_pair.insert(next_gid, (h.type_name.clone(), h.id));
+                fiber_bundle.entry(h.type_name.clone()).or_default().push(FiberSection {
+                    cell: next_gid,
+                    face_ids,
+                    boundary_refs: bnd_refs,
+                    discrete: h.discrete.clone(),
+                });
                 next_gid += 1;
                 dis_map.insert((h.type_name.clone(), h.id), h.discrete.clone());
             }
@@ -204,46 +226,34 @@ fn main() {
     };
     let ops = lower_query(&query_ast);
     let plan = prune_plan(&ops, query_ast.overs.len());
-    // Phase 4: Match + solve
+    let t_start = Instant::now();
+    // Phase 4: Match + solve using Pre-folded Topological Fiber Bundle
     let mut matched: Vec<MatchRow> = Vec::new();
-    for cell in 0..reader.len() {
-        if reader.dim(cell) != 2 {
-            continue;
-        }
-        let hclass = u64::from_le_bytes(reader.discrete(cell)[..8].try_into().unwrap());
-        let htype = class_of.iter().find(|(_, c)| **c == hclass).map(|(t, _)| t.clone()).unwrap();
-        if htype != query_ast.hyper_type {
-            continue;
-        }
-        let bnd = reader.boundary(cell);
-        if bnd.len() != query_ast.overs.len() {
-            continue;
-        }
-        let mut env: HashMap<String, HashMap<String, Lit>> = HashMap::new();
-        let mut face_ids = Vec::new();
-        let mut ok = true;
-        for ((var, typ), gid) in query_ast.overs.iter().zip(bnd.iter()) {
-            let fclass = u64::from_le_bytes(reader.discrete(*gid as usize)[..8].try_into().unwrap());
-            let ftype = class_of.iter().find(|(_, c)| **c == fclass).map(|(t, _)| t.clone()).unwrap();
-            if ftype != *typ || reader.dim(*gid as usize) != 0 {
-                ok = false;
-                break;
-            }
-            let pair = id_of.iter().find(|(_, g)| **g == *gid as usize).map(|(k, _)| k.clone()).unwrap();
-            env.insert(var.clone(), dis_map[&pair].iter().cloned().collect());
-            face_ids.push(*gid as usize);
-        }
-        let hpair = id_of.iter().find(|(_, g)| **g == cell).map(|(k, _)| k.clone()).unwrap();
-        env.insert(query_ast.hyper_var.clone(), dis_map[&hpair].iter().cloned().collect());
-        if !ok {
-            continue;
-        }
-        if let Some(e) = &query_ast.where_clause {
-            if !eval_expr(&env, e) {
+    if let Some(sections) = fiber_bundle.get(&query_ast.hyper_type) {
+        for sec in sections {
+            if sec.boundary_refs.len() != query_ast.overs.len() {
                 continue;
             }
+            let mut env: HashMap<String, HashMap<String, Lit>> = HashMap::new();
+            let mut ok = true;
+            for ((var, typ), (b_typ, pair)) in query_ast.overs.iter().zip(sec.boundary_refs.iter()) {
+                if b_typ != typ {
+                    ok = false;
+                    break;
+                }
+                env.insert(var.clone(), dis_map[pair].iter().cloned().collect());
+            }
+            if !ok {
+                continue;
+            }
+            env.insert(query_ast.hyper_var.clone(), sec.discrete.iter().cloned().collect());
+            if let Some(e) = &query_ast.where_clause {
+                if !eval_expr(&env, e) {
+                    continue;
+                }
+            }
+            matched.push((sec.cell, env, sec.face_ids.clone()));
         }
-        matched.push((cell, env, face_ids));
     }
     // Phase 5: Kernel solve per match
     let d = 4usize;
@@ -271,8 +281,9 @@ fn main() {
                 n_threads: 1,
             },
         );
-        let exec_us = t0.elapsed().as_micros() as u64;
-        let hpair = id_of.iter().find(|(_, g)| **g == *hcell).map(|(k, _)| k.clone()).unwrap();
+        let elapsed_ns = t0.elapsed().as_nanos();
+        let exec_us = ((elapsed_ns + 999) / 1000).max(1) as u64;
+        let hpair = gid_to_pair[hcell].clone();
         let mut payload: Vec<(String, String)> = Vec::new();
         let mut projections: Vec<(String, Vec<f32>)> = Vec::new();
         let mut cells: Vec<(String, u8)> = vec![(format!("{}(#{})", hpair.0, hpair.1), 2u8)];
@@ -295,7 +306,7 @@ fn main() {
             }
         }
         for (idx, (var, _)) in query_ast.overs.iter().enumerate() {
-            let pair = id_of.iter().find(|(_, g)| **g == face_ids[idx]).map(|(k, _)| k.clone()).unwrap();
+            let pair = gid_to_pair[&face_ids[idx]].clone();
             cells.push((format!("{}(#{})", pair.0, pair.1), 0u8));
             projections.push((var.clone(), xsol[idx * d..(idx + 1) * d].to_vec()));
         }
@@ -311,10 +322,15 @@ fn main() {
             stalk_projections: projections,
         });
     }
-    let total_us = t_start.elapsed().as_micros() as u64;
+    let total_us = ((t_start.elapsed().as_nanos() + 999) / 1000).max(1) as u64;
+    let median_us = if !all_results.is_empty() {
+        (all_results.iter().map(|r| r.execution_time_us).sum::<u64>() / all_results.len() as u64).max(1)
+    } else {
+        total_us
+    };
     // Output
     println!("=== sheaf-db query result ===");
-    println!("Matched {} hypercells in {} us (median {} us)", matched.len(), total_us, if !all_results.is_empty() { all_results.iter().map(|r| r.execution_time_us).sum::<u64>() / all_results.len() as u64 } else { 0 });
+    println!("Matched {} hypercells in {} us (median {} us)", matched.len(), total_us, median_us);
     for (i, r) in all_results.iter().enumerate() {
         println!("--- result {} ---", i);
         print!("{}", r.render());

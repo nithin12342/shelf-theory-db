@@ -43,6 +43,9 @@ pub struct BcsfReader {
     pub offsets: CellOffsets,
     pub indices: IncidenceIndices,
     pub arena: StalkArena,
+    /// Null bitmap mirrored here for fast O(1) validity checks without
+    /// going through the arena.
+    pub validity: Vec<u64>,
     /// B5: optional shadow-paging chain. When set, this reader's OWN slabs
     /// are empty and its cells resolve through the chain.
     pub chain: Option<Arc<Chain>>,
@@ -65,7 +68,9 @@ impl BcsfReader {
                 morph_offsets: vec![0],
                 morphs: Vec::new(),
                 discrete: Vec::new(),
+                validity: Vec::new(),
             },
+            validity: Vec::new(),
             chain: Some(Arc::new(Chain { base, delta, remap, identity, base_cells })),
         }
     }
@@ -137,6 +142,16 @@ impl BcsfReader {
         let (r, c) = self.resolve(cell);
         r.arena.discrete(c)
     }
+    /// O(1) null check: true if the cell is valid (not null).
+    pub fn valid(&self, cell: usize) -> bool {
+        let (r, c) = self.resolve(cell);
+        let word = c / 64;
+        let bit = c % 64;
+        match r.validity.get(word) {
+            Some(w) => (w >> bit) & 1 == 1,
+            None => false,
+        }
+    }
     /// Raw payload bytes counted for the <1.5x gate (V1: discrete included).
     pub fn raw_payload_bytes(&self) -> usize {
         if let Some(c) = &self.chain {
@@ -192,7 +207,9 @@ impl BcsfReader {
                     morph_offsets: self.arena.morph_offsets.clone(),
                     morphs: self.arena.morphs.clone(),
                     discrete: self.arena.discrete.clone(),
+                    validity: self.arena.validity.clone(),
                 },
+                validity: self.validity.clone(),
                 chain: None,
             };
         };
@@ -258,6 +275,13 @@ impl BcsfReader {
         }
         if self.arena.discrete.len() != n * 16 {
             return Err("discrete slab != ncells*16".to_string());
+        }
+        let validity_words_needed = (n + 63) / 64;
+        if self.arena.validity.len() < validity_words_needed {
+            return Err("validity bitmap too short for ncells".to_string());
+        }
+        if self.validity.len() < validity_words_needed {
+            return Err("validity bitmap too short for ncells".to_string());
         }
         if self.arena.morph_offsets.len() != self.arena.morph_cells.len() + 1 {
             return Err("morph_offsets length != morph_cells+1".to_string());

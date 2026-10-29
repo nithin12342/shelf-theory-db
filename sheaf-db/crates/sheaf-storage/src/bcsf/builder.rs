@@ -16,6 +16,8 @@ pub struct BcsfBuilder {
     morph_offsets: Vec<u32>,
     morphs: Vec<f32>,
     discrete: Vec<u8>,
+    /// Null bitmap: 1 bit per cell, 1 = valid. Grows one bit per push.
+    validity: Vec<u64>,
 }
 
 impl Default for BcsfBuilder {
@@ -36,6 +38,7 @@ impl BcsfBuilder {
             morph_offsets: vec![0],
             morphs: Vec::new(),
             discrete: Vec::new(),
+            validity: Vec::new(),
         }
     }
     /// boundary must be sorted; discrete is the 16-byte exact payload (V1);
@@ -48,6 +51,38 @@ impl BcsfBuilder {
         self.offsets.push(u32::try_from(self.indices.len()).expect("BCSF indices overflow u32"));
         self.stalks.extend_from_slice(stalk);
         self.stalk_offsets.push(u32::try_from(self.stalks.len()).expect("BCSF stalks overflow u32"));
+        // Mark the new cell as valid (set bit).
+        let word = cell / 64;
+        let bit = cell % 64;
+        if word as usize >= self.validity.len() {
+            self.validity.resize((word + 1) as usize, 0);
+        }
+        self.validity[word as usize] |= 1u64 << bit;
+        if !morph.is_empty() {
+            self.morph_cells.push(cell);
+            self.morphs.extend_from_slice(morph);
+            self.morph_offsets.push(u32::try_from(self.morphs.len()).expect("BCSF morphs overflow u32"));
+        }
+        self.discrete.extend_from_slice(discrete);
+    }
+
+    /// Push a cell using borrowed boundary slice without allocating a heap Vec.
+    pub fn push_slice(&mut self, dim: u8, boundary: &[u64], discrete: &[u8; 16], stalk: &[f32], morph: &[f32]) {
+        let cell = self.dims.len() as u32;
+        self.dims.push(dim);
+        let start_idx = self.indices.len();
+        self.indices.extend_from_slice(boundary);
+        self.indices[start_idx..].sort_unstable();
+        self.offsets.push(u32::try_from(self.indices.len()).expect("BCSF indices overflow u32"));
+        self.stalks.extend_from_slice(stalk);
+        self.stalk_offsets.push(u32::try_from(self.stalks.len()).expect("BCSF stalks overflow u32"));
+        // Mark the new cell as valid (set bit).
+        let word = cell / 64;
+        let bit = cell % 64;
+        if word as usize >= self.validity.len() {
+            self.validity.resize((word + 1) as usize, 0);
+        }
+        self.validity[word as usize] |= 1u64 << bit;
         if !morph.is_empty() {
             self.morph_cells.push(cell);
             self.morphs.extend_from_slice(morph);
@@ -205,6 +240,7 @@ impl BcsfBuilder {
             self.morph_offsets.shrink_to_fit();
             self.morphs.shrink_to_fit();
             self.discrete.shrink_to_fit();
+            self.validity.shrink_to_fit();
         }
         let r = BcsfReader {
             dims: self.dims,
@@ -217,7 +253,9 @@ impl BcsfBuilder {
                 morph_offsets: self.morph_offsets,
                 morphs: self.morphs,
                 discrete: self.discrete,
+                validity: self.validity.clone(),
             },
+            validity: self.validity,
             chain: None,
         };
         debug_assert!(r.validate().is_ok(), "BCSF structural invariant broken: {:?}", r.validate().err());

@@ -5,6 +5,7 @@
 // store all 0-cells first. apply() needs zero allocation: stack buffers.
 use super::coboundary::{CoboundaryOp, MAX_D};
 use crate::simd::matvec::{matvec, matvec_transpose};
+use std::sync::Arc;
 
 /// Fingerprint for cached block-Jacobi factors.
 type BjKey = (u32, usize, usize, usize, u32);
@@ -20,7 +21,8 @@ pub struct SheafLaplacian {
     pub diag_only: Vec<bool>,
     /// Cached block-Jacobi factors + fingerprint (see block_jacobi_cached).
     /// Key = (λ bits, n, d, ops len, Σdiag bits).
-    cached_bj: std::cell::RefCell<Option<(BjKey, Vec<f32>)>>,
+    cached_bj: std::cell::RefCell<Option<(BjKey, Arc<Vec<f32>>)>>,
+    scratch_pool: std::cell::RefCell<Vec<Vec<f32>>>,
 }
 
 impl SheafLaplacian {
@@ -66,7 +68,7 @@ impl SheafLaplacian {
                 }
             }
         }
-        Self { n, d, ops, diag, diag_only, cached_bj: std::cell::RefCell::new(None) }
+        Self { n, d, ops, diag, diag_only, cached_bj: std::cell::RefCell::new(None), scratch_pool: std::cell::RefCell::new(Vec::new()) }
     }
 
     /// out = L·x (overwrite contract: zeroes out first, so solver loops
@@ -144,26 +146,43 @@ impl SheafLaplacian {
         let d = self.d;
         let out_len = out.len();
         let chunk = (self.ops.len() + n_threads - 1) / n_threads.max(1);
-        let op_chunks = self.ops.chunks(chunk);
-        let flag_chunks = self.diag_only.chunks(chunk);
+        let op_chunks: Vec<_> = self.ops.chunks(chunk).collect();
+        let flag_chunks: Vec<_> = self.diag_only.chunks(chunk).collect();
+        let num_actual_threads = op_chunks.len();
+
+        let mut pool = self.scratch_pool.borrow_mut();
+        while pool.len() < num_actual_threads {
+            pool.push(vec![0.0f32; out_len]);
+        }
+        for buf in pool.iter_mut().take(num_actual_threads) {
+            if buf.len() < out_len {
+                buf.resize(out_len, 0.0);
+            }
+            buf[..out_len].fill(0.0);
+        }
+
+        let (active_bufs, _) = pool.split_at_mut(num_actual_threads);
+
         std::thread::scope(|s| {
             let mut handles = Vec::new();
-            for (chunk, flags) in op_chunks.zip(flag_chunks) {
+            for (buf, (c, flags)) in active_bufs.iter_mut().zip(op_chunks.into_iter().zip(flag_chunks.into_iter())) {
+                let local = &mut buf[..out_len];
                 handles.push(s.spawn(move || {
-                    let mut local = vec![0.0f32; out_len];
-                    for (op, is_diag) in chunk.iter().zip(flags.iter()) {
-                        Self::accumulate_op(d, op, *is_diag, x, &mut local);
+                    for (op, is_diag) in c.iter().zip(flags.iter()) {
+                        Self::accumulate_op(d, op, *is_diag, x, local);
                     }
-                    local
                 }));
             }
             for h in handles {
-                let local = h.join().unwrap();
-                for (slot, val) in out.iter_mut().zip(local.iter()) {
-                    *slot += val;
-                }
+                h.join().unwrap();
             }
         });
+
+        for buf in active_bufs.iter() {
+            for (slot, val) in out.iter_mut().zip(buf[..out_len].iter()) {
+                *slot += val;
+            }
+        }
     }
 
     /// Restrict to the active set (cells incident to ≥1 hypercell).
@@ -206,7 +225,7 @@ impl SheafLaplacian {
     /// a stale approximation. External mutation of the pub fields changes
     /// Σdiag/ops-len and safely misses. RefCell keeps the &self API (zero
     /// ripple into E2E callers); one borrow per solve, never per iteration.
-    pub fn block_jacobi_cached(&self, lambda: f32) -> Vec<f32> {
+    pub fn block_jacobi_cached(&self, lambda: f32) -> Arc<Vec<f32>> {
         let mut sum = 0.0f32;
         for &v in &self.diag {
             sum += v;
@@ -214,11 +233,11 @@ impl SheafLaplacian {
         let key = (lambda.to_bits(), self.n, self.d, self.ops.len(), sum.to_bits());
         if let Some((k, factors)) = self.cached_bj.borrow().as_ref() {
             if *k == key {
-                return factors.clone();
+                return Arc::clone(factors);
             }
         }
-        let factors = self.block_jacobi_inv(lambda);
-        *self.cached_bj.borrow_mut() = Some((key, factors.clone()));
+        let factors = Arc::new(self.block_jacobi_inv(lambda));
+        *self.cached_bj.borrow_mut() = Some((key, Arc::clone(&factors)));
         factors
     }
     /// Block-Jacobi factors: per-cell inverse of (D_v + λI), flat n·d·d.

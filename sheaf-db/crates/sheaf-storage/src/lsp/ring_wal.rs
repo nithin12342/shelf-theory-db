@@ -7,7 +7,11 @@
 // gate asserts both agree bit-exactly. Consumers drain dim-prefixed frames
 // into a GradedWal and seal in graded order (down-closure preserved).
 use std::cell::UnsafeCell;
+use std::path::Path;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Mutex;
+
+use super::wal::WalWriter;
 
 pub const SLOT_DATA: usize = 52;
 
@@ -190,5 +194,74 @@ impl HwCrcRing {
             n += 1;
         }
         n
+    }
+}
+
+/// Lock-free WAL built on `HwCrcRing`. Writers claim fixed 64-byte slots via
+/// an atomic tail pointer (no mutex on the append path). A group-commit
+/// `flush` drains every ready slot into the `WalWriter` buffer under a single
+/// mutex acquisition and then flushes to disk, so N appends cost one lock
+/// instead of N.
+pub struct RingWal {
+    ring: HwCrcRing,
+    wal: Mutex<WalWriter>,
+}
+
+impl RingWal {
+    pub fn create(path: &Path, ring_pow2: u32) -> std::io::Result<Self> {
+        Ok(Self {
+            ring: HwCrcRing::new(ring_pow2),
+            wal: Mutex::new(WalWriter::create(path)?),
+        })
+    }
+
+    /// Append a frame lock-free. Falls back to a locked direct append when the
+    /// ring is full or the frame exceeds one slot, so a frame is never lost.
+    pub fn append(&self, payload: &[u8]) -> std::io::Result<()> {
+        if !self.ring.try_append(payload) {
+            self.wal.lock().unwrap().append(payload)?;
+        }
+        Ok(())
+    }
+
+    /// Drain every ready ring slot into the WAL buffer, then flush to disk.
+    /// One mutex acquisition per flush regardless of how many frames are
+    /// pending (group commit).
+    pub fn flush(&self) -> std::io::Result<()> {
+        let mut wal = self.wal.lock().unwrap();
+        self.ring.drain(|bytes| {
+            let _ = wal.append(bytes);
+        });
+        wal.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn ring_wal_round_trip() {
+        let dir = std::env::temp_dir().join("ring_wal_test");
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("t.wal");
+        let _ = fs::remove_file(&path);
+        let wal = RingWal::create(&path, 10).unwrap();
+        for i in 0..5000u64 {
+            let frame = [i as u8, (i >> 8) as u8, (i >> 16) as u8];
+            wal.append(&frame).unwrap();
+            if (i + 1) % 1000 == 0 {
+                wal.flush().unwrap();
+            }
+        }
+        wal.flush().unwrap();
+        let (recs, truncated) = super::super::wal::replay(&path).unwrap();
+        assert_eq!(recs.len(), 5000);
+        assert!(!truncated);
+        for (i, r) in recs.iter().enumerate() {
+            assert_eq!(*r, vec![i as u8, (i >> 8) as u8, (i >> 16) as u8]);
+        }
+        let _ = fs::remove_file(&path);
     }
 }

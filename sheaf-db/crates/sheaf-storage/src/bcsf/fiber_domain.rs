@@ -9,6 +9,8 @@
 // The gate is the RE-SORT COUNT: 1,000 writes must cost as many re-sorts
 // as there are dirty domains - never 1,000.
 
+use rayon::prelude::*;
+
 /// One domain of a fiber: a contiguous key range with its sorted entries.
 #[derive(Clone, Debug, Default)]
 pub struct FiberDomain {
@@ -59,7 +61,7 @@ impl FiberDomains {
     pub fn build(entries: &[(u64, u32)], domain_bytes: usize) -> FiberDomains {
         let per_domain = (domain_bytes / 16).max(1);
         let mut sorted: Vec<(u64, u32)> = entries.to_vec();
-        sorted.sort_unstable();
+        sorted.par_sort_unstable();
         let mut domains: Vec<FiberDomain> = Vec::new();
         let mut start = 0usize;
         while start < sorted.len() {

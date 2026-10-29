@@ -87,6 +87,8 @@ unsafe fn fused_sum_avx512(slab: &[f32], d: usize, p: usize, q: usize) -> f64 {
     let one = _mm512_set1_ps(1.0);
     let mut idx = [0i32; 16];
     let mut r = 0usize;
+    let mut vec_acc = _mm512_setzero_ps();
+    let mut chunk_cnt = 0usize;
     while r + 16 <= n {
         for (k, slot) in idx.iter_mut().enumerate() {
             *slot = ((r + k) * d + p) as i32;
@@ -97,9 +99,17 @@ unsafe fn fused_sum_avx512(slab: &[f32], d: usize, p: usize, q: usize) -> f64 {
         }
         let qv = _mm512_i32gather_ps(_mm512_loadu_si512(idx.as_ptr() as *const _), slab.as_ptr(), 4);
         let factor = _mm512_sub_ps(one, qv);
-        let prod = _mm512_fmadd_ps(pv, factor, _mm512_setzero_ps());
-        total += _mm512_reduce_add_ps(prod) as f64;
+        vec_acc = _mm512_fmadd_ps(pv, factor, vec_acc);
+        chunk_cnt += 1;
+        if chunk_cnt == 8 {
+            total += _mm512_reduce_add_ps(vec_acc) as f64;
+            vec_acc = _mm512_setzero_ps();
+            chunk_cnt = 0;
+        }
         r += 16;
+    }
+    if chunk_cnt > 0 {
+        total += _mm512_reduce_add_ps(vec_acc) as f64;
     }
     while r < n {
         let b = r * d;

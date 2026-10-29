@@ -253,6 +253,43 @@ pub fn parse_i64(b: &[u8]) -> i64 {
     v
 }
 
+/// Parse an ASCII decimal floating point from a field, as f32.
+///
+/// Handles digits and one optional '.'. No sign, no exponent, no UTF-8
+/// validation, no radix check, no overflow checks. This is the byte-loop
+/// form the ingest hot path requires; the old code routed the rating field
+/// through `str::from_utf8` + `str::parse`, which carries sign/radix/overflow
+/// logic and a UTF-8 validation pass per row.
+pub fn parse_f32(b: &[u8]) -> f32 {
+    if b.is_empty() || b.len() > 12 {
+        return 0.0;
+    }
+    let mut dot = false;
+    let mut int: u32 = 0;
+    let mut frac: u32 = 0;
+    let mut frac_len: u32 = 0;
+    for &c in b {
+        if c == b'.' {
+            if dot {
+                return 0.0;
+            }
+            dot = true;
+            continue;
+        }
+        if !c.is_ascii_digit() {
+            return 0.0;
+        }
+        if !dot {
+            int = int.saturating_mul(10).saturating_add((c - b'0') as u32);
+        } else {
+            frac = frac.saturating_mul(10).saturating_add((c - b'0') as u32);
+            frac_len += 1;
+        }
+    }
+    let scale = 10f32.powi(frac_len as i32);
+    int as f32 + frac as f32 / scale
+}
+
 /// Split the content into byte ranges that begin and end on a line
 /// boundary. The first range starts at 0 and the last ends at the end of
 /// the content, so every line belongs to exactly one range.
@@ -316,7 +353,7 @@ pub fn parse_names_range(content: &[u8], range: (usize, usize), skip_header: boo
     let mut fs = FieldScratch::new();
     let mut part = NamesPart { records: Vec::new(), blob: Vec::new() };
     for line in lines_of(content, range, skip_header) {
-        fs.scan(line, &WANT);
+        fs.scan_simd(line, &WANT);
         let id = parse_id(fs.get(line, 0));
         if id == 0 {
             continue;
@@ -335,12 +372,12 @@ pub fn parse_ratings_range(content: &[u8], range: (usize, usize), skip_header: b
     let mut fs = FieldScratch::new();
     let mut out: Vec<u8> = Vec::new();
     for line in lines_of(content, range, skip_header) {
-        fs.scan(line, &WANT);
+        fs.scan_simd(line, &WANT);
         let id = parse_id(fs.get(line, 0));
         if id == 0 {
             continue;
         }
-        let avg: f32 = std::str::from_utf8(fs.get(line, 1)).unwrap_or("0").parse().unwrap_or(0.0);
+        let avg = parse_f32(fs.get(line, 1));
         let votes: i64 = parse_i64(fs.get(line, 2));
         out.extend_from_slice(&id.to_le_bytes());
         out.extend_from_slice(&avg.to_le_bytes());
@@ -355,7 +392,7 @@ pub fn parse_basics_range(content: &[u8], range: (usize, usize), skip_header: bo
     let mut fs = FieldScratch::new();
     let mut out: Vec<u8> = Vec::new();
     for line in lines_of(content, range, skip_header) {
-        fs.scan(line, &WANT);
+        fs.scan_simd(line, &WANT);
         let id = parse_id(fs.get(line, 0));
         if id == 0 {
             continue;
@@ -378,8 +415,11 @@ pub fn parse_basics_range(content: &[u8], range: (usize, usize), skip_header: bo
 
 /// The partial result of one thread of the principals stage.
 pub struct PrincipalsPart {
-    /// The per-title count of named people.
-    pub counts: std::collections::HashMap<u64, u32>,
+    /// Run-length (title_id, count) in title order within this range.
+    /// `title.principals.tsv` is title-sorted, so same titles are adjacent
+    /// inside a byte range; we count consecutive equal titles instead of
+    /// probing a hash map per row.
+    pub counts: Vec<(u64, u32)>,
     /// The actor and actress edges, 16 bytes each, in file order.
     pub edges: Vec<u8>,
 }
@@ -393,9 +433,12 @@ pub fn parse_principals_range(
 ) -> PrincipalsPart {
     const WANT: [u8; 3] = [0, 2, 3];
     let mut fs = FieldScratch::new();
-    let mut part = PrincipalsPart { counts: std::collections::HashMap::new(), edges: Vec::new() };
+    let mut part = PrincipalsPart { counts: Vec::new(), edges: Vec::new() };
+    let mut cur_tid: u64 = 0;
+    let mut cur_count: u32 = 0;
+    let mut have_cur = false;
     for line in lines_of(content, range, skip_header) {
-        fs.scan(line, &WANT);
+        fs.scan_simd(line, &WANT);
         let tid = parse_id(fs.get(line, 0));
         let nid = parse_id(fs.get(line, 1));
         if tid == 0 || nid == 0 {
@@ -404,12 +447,24 @@ pub fn parse_principals_range(
         if !name_id.contains_key(&nid) {
             continue;
         }
-        *part.counts.entry(tid).or_insert(0) += 1;
         let cat = fs.get(line, 2);
         if cat == b"actor" || cat == b"actress" {
             part.edges.extend_from_slice(&nid.to_le_bytes());
             part.edges.extend_from_slice(&tid.to_le_bytes());
         }
+        if have_cur && cur_tid == tid {
+            cur_count += 1;
+        } else {
+            if have_cur {
+                part.counts.push((cur_tid, cur_count));
+            }
+            cur_tid = tid;
+            cur_count = 1;
+            have_cur = true;
+        }
+    }
+    if have_cur {
+        part.counts.push((cur_tid, cur_count));
     }
     part
 }

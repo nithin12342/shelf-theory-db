@@ -115,6 +115,9 @@ number in every one of them names a committed result file, or a derivation shown
 | `MANUAL_CLI_BENCHMARK_AND_FIVE_FAILURES_2026-10-27.md` | Native CLI manual execution benchmark across the five failure workloads and the 50 test cases. |
 | `TEST_CASES_CONSOLIDATION_2026-10-28.md` | Complete consolidation and inventory of unit tests, E2E suites, and microbenchmarks. |
 | `BENCHMARK_RESULTS_50_TEST_CASES_2026-10-28.md` | Native CLI fresh benchmark execution across 50 high-variance test cases and five problem workloads. |
+| `CONTINUOUS_STREAMING_READ_WRITE_BENCHMARK_2026-10-28.md` | Continuous concurrent streaming read/write benchmark and incremental fiber build comparison across eight databases. |
+| `SHELFDB_WRITE_PATH_FUNDAMENTAL_ARCHITECTURE_AND_OPTIMIZATION.md` | Complete context injection and technical roadmap for external agents to optimize the ShelfDB write path. |
+| `SHELFDB_SCHEMA_DESIGN_AND_QUERY_PATTERNS.md` | Complete guide to topological schema design, efficient patterns, TQL grammar, and GNN/SNN tensor integration. |
 
 **Two rules that came out of the sessions.**
 

@@ -20,8 +20,8 @@ use sheaf_core::stalk::discrete::DiscreteStalk;
 
 use crate::bcsf::builder::BcsfBuilder;
 use crate::bcsf::reader::BcsfReader;
+use super::ring_wal::RingWal;
 use super::snapshot::{BatchView, Snapshot};
-use super::wal::WalWriter;
 
 pub const STAR_SHARDS: usize = 64;
 pub const SEAL_EVERY: u32 = 1000;
@@ -82,7 +82,7 @@ pub struct MemComplex {
     /// stay valid). Without this, deletes after a merge miss cascades whose
     /// Star entries were dropped at install (E2E-caught dangling bug).
     base_star: Mutex<HashMap<u64, Vec<u32>>>,
-    wal: Mutex<WalWriter>,
+    wal: RingWal,
     gen: AtomicU64,
     registry: Arc<Mutex<HashMap<u64, usize>>>,
     /// (shard, batch) -> per-local new base index after merge (u32::MAX = dropped).
@@ -105,7 +105,7 @@ impl MemComplex {
             base_live: Mutex::new(base_live),
             base_death: Mutex::new(base_death),
             base_star: Mutex::new(HashMap::new()),
-            wal: Mutex::new(WalWriter::create(wal_path)?),
+            wal: RingWal::create(wal_path, 16)?,
             gen: AtomicU64::new(1),
             registry: Arc::new(Mutex::new(HashMap::new())),
             merged_map: Mutex::new(HashMap::new()),
@@ -137,7 +137,7 @@ impl MemComplex {
     /// WALs the op frame first (durable before visible at seal).
     pub fn insert_hypercell(&self, shard: usize, boundary: &[u64], tx_id: u64, stalk: [f32; 2]) -> CellRef {
         let frame = encode_op(boundary, tx_id, &stalk);
-        self.wal.lock().unwrap().append(&frame).unwrap();
+        self.wal.append(&frame).unwrap();
         self.stage(shard, boundary, tx_id, stalk)
     }
 
@@ -178,9 +178,9 @@ impl MemComplex {
     fn stage(&self, shard: usize, boundary: &[u64], tx_id: u64, stalk: [f32; 2]) -> CellRef {
         let mut s = self.shards[shard].lock().unwrap();
         let local = s.open;
-        s.builder.push(
+        s.builder.push_slice(
             2,
-            boundary.to_vec(),
+            boundary,
             &DiscreteStalk::from_u64(tx_id).bytes,
             &stalk,
             &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
@@ -192,7 +192,7 @@ impl MemComplex {
         }
         if s.open >= SEAL_EVERY {
             self.seal_locked(&mut s);
-            self.wal.lock().unwrap().flush().unwrap();
+            self.wal.flush().unwrap();
         }
         r
     }
@@ -203,7 +203,7 @@ impl MemComplex {
     pub fn delete_base(&self, face: usize) {
         let mut frame = vec![2u8];
         frame.extend_from_slice(&(face as u64).to_le_bytes());
-        self.wal.lock().unwrap().append(&frame).unwrap();
+        self.wal.append(&frame).unwrap();
         // B4: the delete is stamped with the generation that INCLUDES it, so
         // snapshots older than that generation still see the cell as alive
         // (repeatable reads) while newer ones see it dead.
@@ -291,12 +291,12 @@ impl MemComplex {
             let mut s = s.lock().unwrap();
             self.seal_locked(&mut s);
         }
-        self.wal.lock().unwrap().flush().unwrap();
+        self.wal.flush().unwrap();
     }
 
     /// Group-commit flush for durability points (replay tests, shutdown).
     pub fn flush_wal(&self) {
-        self.wal.lock().unwrap().flush().unwrap();
+        self.wal.flush().unwrap();
     }
 
     /// Drain only the named sealed batches (snapshot fencing: anything sealed

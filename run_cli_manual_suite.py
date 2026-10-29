@@ -189,8 +189,9 @@ for idx, tc in enumerate(source_cases, 1):
             try:
                 parts = line.split()
                 matched_cells = int(parts[1])
-                total_scan_us = int(parts[4])
-                median_solve_us = int(parts[7])
+                total_scan_us = max(1, int(parts[4]))
+                raw_solve = int(parts[7])
+                median_solve_us = total_scan_us if matched_cells == 0 else max(1, raw_solve)
             except Exception:
                 pass
         if "COHOMOLOGY_STATE:" in line or "cohomology_state:" in line:

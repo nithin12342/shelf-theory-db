@@ -3,8 +3,10 @@
 // per op = full durability) with CRC validation; replay-verify all records.
 // Reports p50/p99 per-insert latency vs SQLite WAL 2.1us p50.
 use std::path::PathBuf;
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::time::Instant;
 
+use sheaf_storage::lsp::ring_wal::RingWal;
 use sheaf_storage::lsp::wal::{replay, WalWriter};
 
 const N: usize = 20_000;
@@ -130,9 +132,61 @@ fn main() {
     println!("gate_delta_wal_replay={}", if dreplay_ok { "PASS" } else { "FAIL" });
     let _ = std::fs::remove_file(&path3);
 
+    // Gate 4: concurrent multi-threaded group commit through RingWal.
+    const CONCURRENT_N: usize = 64_000;
+    const CONCURRENT_WRITERS: usize = 4;
+    let path4: PathBuf = dir.join("test4_ring.wal");
+    let _ = std::fs::remove_file(&path4);
+    let ring = Arc::new(RingWal::create(&path4, 16).unwrap());
+    let total = Arc::new(AtomicU64::new(0));
+    let t0 = Instant::now();
+    let mut handles = Vec::new();
+    for w in 0..CONCURRENT_WRITERS {
+        let ring = Arc::clone(&ring);
+        let total = Arc::clone(&total);
+        handles.push(std::thread::spawn(move || {
+            let mut rng = (w as u64).wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let mut local = 0u64;
+            for _ in 0..(CONCURRENT_N / CONCURRENT_WRITERS) {
+                rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let mut payload = [0u8; 33];
+                payload[1..9].copy_from_slice(&rng.to_le_bytes());
+                ring.append(&payload).unwrap();
+                local += 1;
+                if local % 1000 == 0 {
+                    ring.flush().unwrap();
+                }
+            }
+            total.fetch_add(local, Ordering::Relaxed);
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    ring.flush().unwrap();
+    let elapsed = t0.elapsed().as_secs_f64();
+    let puts = total.load(Ordering::Relaxed);
+    println!(
+        "ring_wal_concurrent: n={} writers={} {:.0} writes/s elapsed={:.2}s",
+        puts,
+        CONCURRENT_WRITERS,
+        puts as f64 / elapsed,
+        elapsed
+    );
+    let (recs4, trunc4) = replay(&path4).unwrap();
+    let gate4 = recs4.len() == puts as usize && !trunc4;
+    println!(
+        "gate_ring_concurrent={} (recs={}/{}, truncated={})",
+        if gate4 { "PASS" } else { "FAIL" },
+        recs4.len(),
+        puts,
+        trunc4
+    );
+    let _ = std::fs::remove_file(&path4);
+
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(&path2);
-    if !replay_ok || !dreplay_ok {
+    if !replay_ok || !dreplay_ok || !gate4 {
         std::process::exit(1);
     }
     println!("WAL_INSERT_BENCH: PASS");

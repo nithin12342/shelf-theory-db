@@ -5,6 +5,7 @@ pub mod builder;
 pub mod catalog;
 pub mod coord;
 pub mod cover;
+pub mod encoding;
 pub mod fiber_domain;
 pub mod indices;
 pub mod name_lookup;

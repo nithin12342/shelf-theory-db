@@ -9,3 +9,4 @@ pub use lsp::io_uring_wal::IoUringWal;
 pub use lsp::delta_wal::DeltaWal;
 pub use lsp::delta_wal::replay_delta;
 pub use lsp::dense_ts::DenseTimeSeries;
+pub use lsp::ring_wal::RingWal;

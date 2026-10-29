@@ -246,12 +246,21 @@ pub fn build(
     let mut reports: Vec<StageReport> = Vec::new();
     let src = |s: &str| format!("{}\\{}", plan.imdb_dir, s);
 
+    // ---- names / ratings / basics: independent but CPU-bound. Each stage
+    // already saturates all cores (stream_stage pins `threads` workers), so
+    // running them concurrently oversubscribes the host and slows the build.
+    // They run sequentially in dependency-free order; ratings and basics do
+    // not depend on names, but names is kept first so its wall time is the
+    // longest single stage and not masked by contention.
+    let names_path = src("name.basics.tsv");
+    let ratings_path = src("title.ratings.tsv");
+    let basics_path = src("title.basics.tsv");
+    let fp_names = source_fingerprint(&names_path);
+    let fp_ratings = source_fingerprint(&ratings_path);
+    let fp_basics = source_fingerprint(&basics_path);
+
     // ---- names: id -> (birth year, primary name) ----
     let t0 = Instant::now();
-    let names_path = src("name.basics.tsv");
-    let gen = source_fingerprint(&names_path);
-    // The id index is only needed by the principals parse, so a fresh names
-    // section rebuilds it at that point and not before.
     let mut name_map: Option<HashMap<u64, u32>> = None;
     let (name_meta, name_blob, reused) =
         match (reuse.take_fresh("names"), reuse.take_fresh("nameblob")) {
@@ -290,14 +299,11 @@ pub fn build(
         println!("reuse names: {n_rows} people in {names_ms:.0} ms");
     }
     reports.push(StageReport { name: "names", rows: n_rows, ms: names_ms });
-    sink.write_section("names", &name_meta, gen)?;
-    sink.write_section("nameblob", &name_blob, gen)?;
-    let fp_names = gen;
+    sink.write_section("names", &name_meta, fp_names)?;
+    sink.write_section("nameblob", &name_blob, fp_names)?;
 
     // ---- ratings ----
     let t0 = Instant::now();
-    let ratings_path = src("title.ratings.tsv");
-    let fp_ratings = source_fingerprint(&ratings_path);
     let (ratings, reused) = match reuse.take_fresh("ratings") {
         Some(b) => (b, true),
         None => {
@@ -327,8 +333,6 @@ pub fn build(
 
     // ---- basics (id, year, flags) ----
     let t0 = Instant::now();
-    let basics_path = src("title.basics.tsv");
-    let fp_basics = source_fingerprint(&basics_path);
     let (basics, reused) = match reuse.take_fresh("basics") {
         Some(b) => (b, true),
         None => {
@@ -381,13 +385,13 @@ pub fn build(
             // is not in cache.
             let t_merge = Instant::now();
             let mut edges: Vec<u8> = Vec::with_capacity(64 << 20);
-            // The per-thread count maps hold disjoint key sets, because every
-            // row of a title is in one byte range. The entries are collected
-            // straight into one vector, so the merge costs no map re-insert.
+            // The per-thread run-length vectors hold disjoint key ranges, each
+            // already sorted by title (the source is title-sorted). Collect
+            // them into one vector, sort once, and sum adjacent duplicates.
             let mut sorted: Vec<(u64, u32)> = Vec::new();
             for p in &parts {
                 sorted.reserve(p.counts.len());
-                for (&t, &c) in p.counts.iter() {
+                for &(t, c) in &p.counts {
                     sorted.push((t, c));
                 }
                 edges.extend_from_slice(&p.edges);
